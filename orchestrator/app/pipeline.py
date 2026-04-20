@@ -1,4 +1,3 @@
-def run_pipeline(job_id: str) -> None:
-    print("layout stage")
-    print("ocr stage")
-    print("assembly stage")
+def start_job(input_path: str) -> str:
+    # later: real logic (create folder, validate file, etc.)
+    return "its a placeholder return of start job function in rubpipeline.py"

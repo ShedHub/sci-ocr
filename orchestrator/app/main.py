@@ -1,17 +1,21 @@
 from fastapi import FastAPI
+from orchestrator.app.schemas import RunRequest, RunResponse
+from orchestrator.app.pipeline import start_job
 
-app = FastAPI(title="SCI OCR Orchestrator")
+app = FastAPI()
 
 
 @app.get("/health")
-async def health():
+def health():
     return {"status": "ok"}
 
 
-@app.get("/run")
-async def run():
-    return {
-        "status": "ok",
-        "message": "hello world",
-        "service": "orchestrator",
-    }
+@app.post("/run", response_model=RunResponse)
+def run(request: RunRequest):
+    job_id = start_job(request.input_path)
+
+    return RunResponse(
+        status="accepted",
+        job_id=job_id,
+        input_path=request.input_path,
+    )
