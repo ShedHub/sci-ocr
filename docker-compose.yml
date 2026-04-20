@@ -1,0 +1,19 @@
+version: "3.9"
+
+services:
+  orchestrator:
+    build:
+      context: ./orchestrator
+    command: python app/main.py
+
+  layout_stub:
+    build:
+      context: ./services/layout_stub
+
+  ocr_stub:
+    build:
+      context: ./services/ocr_stub
+
+  assembly_stub:
+    build:
+      context: ./services/assembly_stub
