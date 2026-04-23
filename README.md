@@ -21,8 +21,9 @@ The system currently supports:
 - `meta.json`, `trace.json`, and `logs.jsonl`
 - PDF page rendering to PNG at 300 DPI by default
 - optional 400 DPI high-quality rendering through the `dpi` request field
-- service-shaped layout stub artifacts for rendered pages
+- HTTP layout service calls for rendered pages
 - layout stub service with `GET /health`, `GET /ready`, and `POST /layout`
+- raw and normalized layout artifacts from the HTTP service boundary
 
 OCR, PP-DocLayoutV3 inference, crop generation, and assembly are not
 implemented yet.
@@ -72,6 +73,15 @@ Server:
 ```text
 http://127.0.0.1:8000
 ```
+
+Start the layout stub in a second terminal:
+
+```powershell
+uvicorn services.layout_stub.app.main:app --host 127.0.0.1 --port 8001
+```
+
+The orchestrator reads `LAYOUT_SERVICE_URL` from the environment. If omitted,
+it uses `http://127.0.0.1:8001`.
 
 ## API
 
@@ -141,7 +151,8 @@ API request
 -> copy input file
 -> write initial metadata, trace, and log
 -> render PDF pages to PNG at requested DPI
--> run local layout stub for rendered pages
+-> check HTTP layout service readiness
+-> call HTTP layout service for each rendered page
 -> write per-page raw and normalized layout artifacts
 -> update meta.json, trace.json, and logs.jsonl
 -> return job_id
@@ -152,4 +163,5 @@ API request
 - Layout uses a deterministic stub, not PP-DocLayoutV3.
 - OCR is not implemented yet.
 - Assembly is not implemented yet.
-- The orchestrator does not call the HTTP layout service yet.
+- Docker Compose currently wires the layout boundary to `layout_stub`, not the
+  real PP-DocLayoutV3 backend.

@@ -13,3 +13,4 @@ typing_extensions==4.15.0
 uvicorn==0.44.0
 PyMuPDF==1.26.6
 pytest==9.0.3
+httpx==0.28.1

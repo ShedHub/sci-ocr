@@ -14,7 +14,7 @@ The current implementation focuses on the foundation:
 - persistent job workspace
 - filesystem artifacts
 - PDF-to-PNG page preparation for layout
-- stub-first service boundaries
+- HTTP-backed stub-first service boundaries
 
 ## Orchestrator
 
@@ -25,7 +25,7 @@ The orchestrator owns high-level pipeline flow:
 - copy original inputs into `original/`
 - write `meta.json`, `trace.json`, and `logs.jsonl`
 - render PDF pages into `assets/pages/page_XXXX.png`
-- call external services through stable contracts
+- call the layout service through a stable HTTP contract
 - normalize service output for downstream stages
 
 The orchestrator must not contain model-specific inference logic.
@@ -106,6 +106,7 @@ Implementation order:
 1. Keep the artifact contract stable.
 2. Add a local service-shaped layout stub in the orchestrator pipeline.
 3. Add a real HTTP `layout_stub` service with the same request/response shape.
-4. Replace `layout_stub` with `PP-DocLayoutV3` behind the same contract.
+4. Switch the orchestrator from the local stub to the HTTP `layout_stub`.
+5. Replace `layout_stub` with `PP-DocLayoutV3` behind the same contract.
 
 The downstream pipeline must consume only normalized layout artifacts.

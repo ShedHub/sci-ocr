@@ -1,4 +1,6 @@
 from time import perf_counter
+from pathlib import Path
+import struct
 
 from pydantic import BaseModel, Field
 
@@ -26,8 +28,27 @@ def get_ready() -> dict[str, str]:
     }
 
 
+def read_png_dimensions(image_path: str) -> tuple[int, int]:
+    """
+    Read PNG dimensions from the file header to verify shared path access.
+    """
+    path = Path(image_path)
+    if not path.is_file():
+        raise ValueError(f"image_path does not exist or is not a file: {image_path}")
+
+    with path.open("rb") as file:
+        header = file.read(24)
+
+    if len(header) < 24 or header[:8] != b"\x89PNG\r\n\x1a\n":
+        raise ValueError(f"image_path is not a valid PNG file: {image_path}")
+
+    width, height = struct.unpack(">II", header[16:24])
+    return width, height
+
+
 def run_layout(request: LayoutRequest) -> dict:
     started = perf_counter()
+    image_width, image_height = read_png_dimensions(request.image_path)
 
     response = {
         "status": "completed",
@@ -40,8 +61,8 @@ def run_layout(request: LayoutRequest) -> dict:
         },
         "image": {
             "path": request.image_path,
-            "width": 1000,
-            "height": 1400,
+            "width": image_width,
+            "height": image_height,
         },
         "blocks": [
             {
@@ -53,7 +74,7 @@ def run_layout(request: LayoutRequest) -> dict:
             }
         ],
         "warnings": [
-            "layout_stub did not read image_path because page rendering is not implemented yet"
+            "layout_stub read the rendered PNG dimensions but did not infer blocks from image content"
         ],
         "error": None,
     }

@@ -9,13 +9,12 @@ This module is responsible only for high-level orchestration:
 - build initial metadata
 - persist initial artifacts
 - prepare PDF pages for layout
-- run the stub-compatible layout stage
+- call the external layout service
 - return job_id
 
 IMPORTANT:
-This is still NOT doing OCR yet. Layout currently uses a deterministic
-service-shaped stub so the artifact contract can be exercised before the real
-PP-DocLayoutV3 container is connected.
+This is still NOT doing OCR yet. Layout is delegated through the same HTTP
+contract that will later be backed by PP-DocLayoutV3.
 """
 
 from datetime import UTC, datetime
@@ -48,7 +47,7 @@ def start_job(input_path: str, dpi: int = 300) -> str:
     4. Copy original file
     5. Build meta.json / trace.json / logs.jsonl
     6. Render PDF pages for layout
-    7. Run layout stage stub
+    7. Run layout service stage
     8. Return job_id
     """
     # ---- 1. Validate input ----
@@ -106,7 +105,7 @@ def start_job(input_path: str, dpi: int = 300) -> str:
     write_json(job_dir / "meta.json", meta)
     write_json(job_dir / "trace.json", trace)
 
-    # ---- 7. Run layout stage stub ----
+    # ---- 7. Run layout service stage ----
     run_layout_stage(
         job_id=job_id,
         copied_file=copied_file,

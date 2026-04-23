@@ -1,1 +1,1 @@
-python orchestrator/app/main.py
+uvicorn orchestrator.app.main:app --reload
