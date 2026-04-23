@@ -6,23 +6,26 @@ This document defines the artifact contract for the document processing pipeline
 
 Pipeline direction:
 
-Input → Layout → OCR → Assembly → Output
+```text
+Input -> Page Rendering -> Layout -> OCR -> Assembly -> Output
+```
 
-At the current stage, implemented parts:
+Current implemented scope:
 
-* job creation
-* artifact system
-* layout stage contract (stub-first)
+- Job creation
+- Filesystem artifact system
+- PDF page rendering to PNG at 300 or 400 DPI
+- Service-ready layout contract in stub-first form
 
-The goal is to **keep stage boundaries stable**, so models can be replaced without breaking the system.
-
----
+The core rule is that stage boundaries must stay stable. A backend such as
+`layout_stub` must be replaceable with `PP-DocLayoutV3` without changing
+downstream pipeline logic.
 
 ## Global Job Output Structure
 
 Each request creates a job folder:
 
-```
+```text
 jobs/output/<job_id>/
 ├─ original/
 ├─ preprocessed/
@@ -35,297 +38,346 @@ jobs/output/<job_id>/
 └─ logs.jsonl
 ```
 
----
+Folder meaning:
 
-## Folder Meaning
+- `original/` stores the unchanged source document.
+- `preprocessed/` stores future normalized inputs.
+- `assets/pages/` stores rendered page images, for example `page_0001.png`.
+- `assets/layout/` stores future layout overlays and visualizations.
+- `debug/` stores machine-readable intermediate outputs.
+- `meta.json` stores job summary and stage statuses.
+- `trace.json` stores an ordered timeline of pipeline events.
+- `logs.jsonl` stores append-only structured logs.
 
-* `original/` — original input file (unchanged)
-* `preprocessed/` — future normalized inputs (e.g., page images)
-* `assets/pages/` — page images (future)
-* `assets/layout/` — layout overlays / visualizations (future)
-* `debug/` — machine-readable intermediate outputs
-* `meta.json` — job summary and stage statuses
-* `trace.json` — ordered timeline of pipeline events
-* `logs.jsonl` — append-only structured logs
+## Preparing For Layout
 
----
+Before layout runs, the orchestrator renders every PDF page into PNG files.
+The default render quality is 300 DPI. The API may request 400 DPI for a
+higher-quality mode.
+
+Rendered pages are stored as:
+
+```text
+assets/pages/page_0001.png
+assets/pages/page_0002.png
+```
+
+The stage also writes:
+
+```text
+debug/preparing_for_layout.json
+```
+
+Example manifest:
+
+```json
+{
+  "stage": "preparing_for_layout",
+  "status": "completed",
+  "job_id": "job-0001",
+  "source_pdf": "C:/project/jobs/output/job-0001/original/test.pdf",
+  "dpi": 300,
+  "format": "png",
+  "pages": [
+    {
+      "page_number": 1,
+      "image_path": "C:/project/jobs/output/job-0001/assets/pages/page_0001.png",
+      "width": 2480,
+      "height": 3508,
+      "dpi": 300,
+      "format": "png"
+    }
+  ]
+}
+```
 
 ## Job-Level Files
 
 ### meta.json
 
-Stores job state and stage statuses.
+`meta.json` stores job state, input paths, workspace paths, and stage statuses.
 
 Example:
 
 ```json
 {
   "job_id": "job-0001",
-  "input_path": "C:/input/test.pdf",
-  "status": "running",
-  "stages": {
-    "layout": {
-      "status": "completed"
-    }
-  }
-}
-```
-
----
-
-### trace.json
-
-Stores ordered pipeline events.
-
-Example:
-
-```json
-[
-  {
-    "event": "job_created",
-    "timestamp": "2026-04-22T10:00:00Z"
+  "status": "created",
+  "input": {
+    "original_path": "C:/input/test.pdf",
+    "copied_path": "C:/project/jobs/output/job-0001/original/test.pdf",
+    "filename": "test.pdf"
   },
-  {
-    "event": "layout_started",
-    "timestamp": "2026-04-22T10:00:01Z"
-  },
-  {
-    "event": "layout_completed",
-    "timestamp": "2026-04-22T10:00:02Z",
-    "pages": 1,
-    "blocks": 1
-  }
-]
-```
-
----
-
-### logs.jsonl
-
-Append-only structured logs.
-
-Example:
-
-```json
-{"timestamp":"2026-04-22T10:00:00Z","level":"INFO","event":"job_created"}
-{"timestamp":"2026-04-22T10:00:01Z","level":"INFO","event":"layout_started"}
-```
-
----
-
-## Layout Stage Contract
-
-### Purpose
-
-The layout stage detects document structure and outputs:
-
-1. raw layout (engine-specific)
-2. normalized layout (project-standard)
-
----
-
-## Layout Input
-
-The layout stage receives:
-
-* `input_path` — path to document
-* `job_dir` — path to job output folder
-
-Example:
-
-```json
-{
-  "input_path": "C:/input/test.pdf",
-  "job_dir": "C:/project/jobs/output/job-0001"
-}
-```
-
----
-
-## Layout Output Files
-
-The layout stage MUST create:
-
-### 1. debug/layout_raw.json
-
-Raw output of layout engine (or stub)
-
-### 2. debug/layout_normalized.json
-
-Canonical normalized layout used by pipeline
-
----
-
-## Layout Status
-
-Each layout stage ends with one of:
-
-* `completed`
-* `degraded`
-* `failed`
-
-These must be reflected in:
-
-* meta.json
-* trace.json
-* logs.jsonl
-
----
-
-## layout_raw.json (example)
-
-```json
-{
-  "engine": "layout_stub",
-  "pages": [
+  "stages": [
     {
-      "page_number": 1,
-      "detections": [
-        {
-          "label": "text",
-          "bbox": [100, 100, 700, 180],
-          "score": 0.98
-        }
-      ]
+      "name": "layout",
+      "status": "completed",
+      "pages": 1,
+      "blocks": 1
     }
   ]
 }
 ```
 
-⚠ Raw format is backend-specific
-⚠ Do NOT use it downstream
+### trace.json
 
----
+`trace.json` stores ordered pipeline events.
 
-## layout_normalized.json (canonical format)
+Example:
+
+```json
+{
+  "job_id": "job-0001",
+  "events": [
+    {
+      "ts": "2026-04-22T10:00:00Z",
+      "stage": "job",
+      "event": "created"
+    },
+    {
+      "ts": "2026-04-22T10:00:01Z",
+      "stage": "layout",
+      "event": "page_completed",
+      "details": {
+        "page_number": 1,
+        "blocks": 1
+      }
+    }
+  ]
+}
+```
+
+### logs.jsonl
+
+`logs.jsonl` stores append-only structured logs, one JSON object per line.
+
+Example:
+
+```json
+{"ts":"2026-04-22T10:00:00Z","level":"INFO","stage":"job","message":"Job created"}
+{"ts":"2026-04-22T10:00:01Z","level":"INFO","stage":"layout","message":"Layout page completed","page_number":1}
+```
+
+## Layout Service Contract
+
+### Service Role
+
+Layout is an external persistent service. It receives one rendered page image
+and returns structured page layout. The service does not own OCR, crop routing,
+table extraction, formula recognition, or final assembly.
+
+The service may be implemented by:
+
+- `layout_stub` during local development
+- `PP-DocLayoutV3` in the real backend
+- another layout backend later
+
+### Endpoints
+
+Required endpoints:
+
+- `GET /health` returns process liveness.
+- `GET /ready` returns model/backend readiness.
+- `POST /layout` runs layout detection for one page.
+
+Future endpoint:
+
+- `POST /layout/batch` may process multiple pages in one request.
+
+### Layout Request
+
+The layout service receives one page at a time.
+
+```json
+{
+  "job_id": "job-0001",
+  "document_id": "test.pdf",
+  "page_number": 1,
+  "image_path": "/shared/jobs/output/job-0001/assets/pages/page_0001.png"
+}
+```
+
+Field rules:
+
+- `job_id` is required and must match the orchestrator job id.
+- `document_id` is optional but recommended for traceability.
+- `page_number` is required and starts from 1.
+- `image_path` is required and points to a page PNG visible to both containers.
+
+The preferred transport is HTTP JSON with shared filesystem paths. Large image
+bytes should not be sent through HTTP unless there is no shared volume.
+
+### Layout Response
+
+The layout service returns raw backend output in a service-shaped envelope.
+
+```json
+{
+  "status": "completed",
+  "job_id": "job-0001",
+  "document_id": "test.pdf",
+  "page_number": 1,
+  "model": {
+    "name": "layout_stub",
+    "version": "0.1.0"
+  },
+  "image": {
+    "path": "/shared/jobs/output/job-0001/assets/pages/page_0001.png",
+    "width": 1000,
+    "height": 1400
+  },
+  "blocks": [
+    {
+      "block_id": "p1_b1",
+      "type": "text",
+      "bbox": [100, 100, 700, 180],
+      "confidence": 0.98,
+      "order": 1
+    }
+  ],
+  "warnings": [],
+  "error": null,
+  "service_time_ms": 12
+}
+```
+
+Status values:
+
+- `completed`: valid output, continue pipeline.
+- `degraded`: partial output, continue with caution.
+- `failed`: no valid output, stop or use fallback.
+
+## Layout Artifacts
+
+Layout artifacts are stored per page.
+
+For page 1, the layout stage writes:
+
+```text
+debug/layout_raw_page_0001.json
+debug/layout_normalized_page_0001.json
+```
+
+### Raw Layout
+
+Raw layout is the exact service response, or as close as possible to the backend
+response. It is backend-specific and must not be used by downstream stages.
+
+Example path:
+
+```text
+debug/layout_raw_page_0001.json
+```
+
+### Normalized Layout
+
+Normalized layout is the canonical project format used downstream.
+
+Example:
 
 ```json
 {
   "stage": "layout",
   "status": "completed",
   "source": "layout_stub",
-  "pages": [
+  "job_id": "job-0001",
+  "document_id": "test.pdf",
+  "page_number": 1,
+  "image": {
+    "path": "/shared/jobs/output/job-0001/assets/pages/page_0001.png",
+    "width": 1000,
+    "height": 1400
+  },
+  "blocks": [
     {
-      "page_number": 1,
-      "blocks": [
-        {
-          "block_id": "p1_b1",
-          "type": "text",
-          "bbox": [100, 100, 700, 180],
-          "confidence": 0.98,
-          "order": 1,
-          "source": "layout_stub"
-        }
-      ]
+      "block_id": "p1_b1",
+      "type": "text",
+      "bbox": [100, 100, 700, 180],
+      "confidence": 0.98,
+      "order": 1,
+      "source": "layout_stub"
     }
-  ]
+  ],
+  "warnings": []
 }
 ```
 
----
-
 ## Normalized Layout Rules
 
-### Top-level
+Top-level rules:
 
-* `stage` = "layout"
-* `status` = completed | degraded | failed
-* `source` = backend name
-* `pages` = ordered list
+- `stage` is always `layout`.
+- `status` is `completed`, `degraded`, or `failed`.
+- `source` is the backend/model name.
+- `job_id` is required.
+- `page_number` starts from 1.
+- `blocks` is deterministic and ordered.
 
----
+Block rules:
 
-### Page
+- `block_id` is unique within the document.
+- `type` is one of the supported normalized block types.
+- `bbox` is `[x1, y1, x2, y2]`.
+- `confidence` is a float.
+- `order` is an integer reading/order hint.
+- `source` is the backend/model name.
 
-Each page must contain:
+Downstream stages must use only normalized layout, never raw layout.
 
-* `page_number` (starts from 1)
-* `blocks` (ordered list)
+## Supported Block Types
 
----
+Current canonical block types:
 
-### Block
+- `title`
+- `text`
+- `table`
+- `formula`
+- `figure`
 
-Each block must contain:
+Additional backend-specific labels must be mapped into this canonical set before
+downstream stages consume them.
 
-* `block_id` — unique (example: p1_b1)
-* `type` — normalized type
-* `bbox` — [x1, y1, x2, y2]
-* `confidence` — float
-* `order` — integer
-* `source` — backend name
+## Crop Ownership
 
----
+The layout service returns structured blocks and coordinates. The orchestrator
+owns crop generation and downstream routing.
 
-## Requirements
+Routing direction:
 
-1. page_number starts from 1
-2. block_id is unique
-3. bbox has 4 numbers
-4. order is integer
-5. pages are ordered
-6. blocks are deterministic
-7. downstream uses ONLY normalized layout
-
----
-
-## Supported Block Types (current)
-
-Minimal set:
-
-* text
-* title
-* table
-* figure
-
----
-
-## Failure Semantics
-
-### completed
-
-Valid output → continue pipeline
-
-### degraded
-
-Partial output → continue with caution
-
-### failed
-
-No valid output → stop or fallback
-
----
+- `title` and `text` go to the OCR pipeline.
+- `table` goes to the table pipeline.
+- `formula` goes to the formula pipeline.
+- `figure` goes to the image/vision pipeline.
 
 ## Backend Replacement Rule
 
-You must be able to replace:
+The system must support this replacement:
 
-layout_stub → PP-DocLayoutV3
+```text
+layout_stub -> PP-DocLayoutV3
+```
 
-WITHOUT changing:
+Without changing:
 
-* normalized format
-* pipeline logic
-* downstream stages
+- normalized layout format
+- downstream pipeline stages
+- crop/routing ownership
 
-Only raw output may change.
-
----
+Only raw backend output and backend-specific adapter logic may change.
 
 ## Current Phase Scope
 
-This step guarantees:
+Included now:
 
-* layout contract definition
-* stub-compatible pipeline
-* artifact structure
+- job creation
+- artifact folders
+- PDF page rendering to PNG
+- service-ready layout contract
+- stub-compatible layout artifact format
 
 Not included yet:
 
-* page rendering
-* overlays
-* reading order
-* OCR
-* assembly
-
----
+- real PP-DocLayoutV3 inference
+- crop generation
+- OCR
+- assembly

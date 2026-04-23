@@ -1,267 +1,155 @@
 # SCI-OCR
 
-Stub-based document processing pipeline.
+Stub-first document processing pipeline.
 
-Current system provides:
+The project is being built around this flow:
 
-* FastAPI orchestrator
-* Job creation API
-* Persistent job storage (filesystem-based)
-* Metadata, trace, and logging for each job
+```text
+Input -> Page Rendering -> Layout -> OCR -> Assembly -> Output
+```
 
----
-
-## 📊 Current Capabilities
+## Current Capabilities
 
 The system currently supports:
 
-* Accepting document processing requests via API
-* Validating input file paths
-* Creating a unique job for each request
-* Saving job artifacts to disk
-* Returning a `job_id` for tracking
+- FastAPI orchestrator
+- `GET /health`
+- `POST /run`
+- input file validation
+- unique job creation
+- persistent job workspace on disk
+- `meta.json`, `trace.json`, and `logs.jsonl`
+- PDF page rendering to PNG at 300 DPI by default
+- optional 400 DPI high-quality rendering through the `dpi` request field
+- service-shaped layout stub artifacts for rendered pages
+- layout stub service with `GET /health`, `GET /ready`, and `POST /layout`
 
-⚠️ No OCR, layout, or document parsing is implemented yet.
+OCR, PP-DocLayoutV3 inference, crop generation, and assembly are not
+implemented yet.
 
----
+## Project Structure
 
-## 🧱 Project Structure
-
-```
+```text
 sci-ocr/
-├── orchestrator/         # API + pipeline logic
-│   └── app/
-│       ├── main.py       # FastAPI entrypoint
-│       ├── pipeline.py   # Job creation logic
-│       ├── schemas.py    # API request/response models
-│       ├── config.py     # Path configuration
-│       ├── job_models.py # (empty, reserved)
-│       └── job_storage.py# (empty, reserved)
-├── jobs/
-│   ├── input/            # Optional input storage
-│   └── output/           # Job results (created automatically)
-├── services/             # Stub services (not used yet)
-├── docs/                 # Architecture and specs
-├── scripts/              # Helper scripts
-├── tests/                # Tests
-├── docker-compose.yml
-└── README.md
++-- orchestrator/                 # API and pipeline logic
+|   +-- app/
+|       +-- main.py                 # FastAPI entrypoint
+|       +-- pipeline.py             # Job creation and stage orchestration
+|       +-- preparing_for_layout.py # PDF-to-PNG rendering stage
+|       +-- layout_stage.py         # Local service-shaped layout stub stage
+|       +-- schemas.py              # API request/response models
+|       +-- config.py               # Path configuration
++-- jobs/
+|   +-- input/                     # Optional input storage
+|   +-- output/                    # Job results
++-- services/
+|   +-- layout_stub/               # Layout HTTP stub
+|   +-- ocr_stub/                  # OCR service placeholder
+|   +-- assembly_stub/             # Assembly service placeholder
++-- docs/
++-- scripts/
++-- tests/
++-- docker-compose.yml
++-- README.md
 ```
 
----
+## How To Run
 
-## 🚀 How to Run
+Activate the local environment:
 
-### 1. Activate environment
-
-Linux:
-
-```
-source .venv/bin/activate
-```
-
-Windows:
-
-```
+```powershell
 .\.venv\Scripts\Activate.ps1
 ```
 
----
+Start the orchestrator:
 
-### 2. Start API server
-
-```
+```powershell
 uvicorn orchestrator.app.main:app --reload
 ```
 
-Server will run at:
+Server:
 
-```
+```text
 http://127.0.0.1:8000
 ```
 
----
+## API
 
-## 🌐 API Endpoints
+Health check:
 
-### Health check
-
-```
+```http
 GET /health
 ```
 
-Example:
+Run a job:
 
-```
-curl http://127.0.0.1:8000/health
-```
-
-Response:
-
-```
-{"status": "ok"}
-```
-
----
-
-### Run job
-
-```
+```http
 POST /run
 ```
 
-#### Request body
+Request body:
 
-```
+```json
 {
-  "input_path": "/absolute/path/to/file.pdf"
+  "input_path": "C:/input/test.pdf",
+  "dpi": 300
 }
 ```
 
----
+`dpi` is optional and can be `300` or `400`. If omitted, the orchestrator uses
+`300`.
 
-### Example (Linux)
+Response:
 
-```
-curl -X POST http://127.0.0.1:8000/run \
-  -H "Content-Type: application/json" \
-  -d '{"input_path": "/home/user/input/test.pdf"}'
-```
-
----
-
-### Example (Windows PowerShell)
-
-```
-Invoke-RestMethod `
-  -Uri "http://127.0.0.1:8000/run" `
-  -Method Post `
-  -ContentType "application/json" `
-  -Body '{"input_path":"C:\\input\\test.pdf"}'
-```
-
----
-
-## 📥 Response
-
-```
+```json
 {
   "status": "accepted",
   "job_id": "job-20260421-213455-ab12cd",
-  "input_path": "/path/to/file.pdf"
+  "input_path": "C:/input/test.pdf",
+  "dpi": 300
 }
 ```
 
----
+## Job Output
 
-## 📂 Job Output Structure
+Each request creates:
 
-Each request creates a folder:
-
-```
+```text
 jobs/output/<job_id>/
++-- original/
++-- preprocessed/
++-- assets/
+|   +-- pages/
+|   |   +-- page_0001.png
+|   +-- layout/
++-- debug/
+|   +-- preparing_for_layout.json
+|   +-- layout_raw_page_0001.json
+|   +-- layout_normalized_page_0001.json
++-- meta.json
++-- trace.json
++-- logs.jsonl
 ```
 
-Example:
+## What The System Does Now
 
-```
-jobs/output/job-2026-.../
-├── meta.json
-├── trace.json
-├── logs.jsonl
-└── original/
-    └── input_file.pdf
-```
-
----
-
-## 📄 File Descriptions
-
-### meta.json
-
-Main job summary:
-
-* job_id
-* status
-* input paths
-* timestamps
-
----
-
-### trace.json
-
-Timeline of events:
-
-* job creation
-* (future: pipeline stages)
-
----
-
-### logs.jsonl
-
-Append-only logs:
-
-* one JSON per line
-* structured logging format
-
----
-
-### original/
-
-Copy of the input file used for this job.
-
----
-
-## ❌ Error Handling
-
-### File does not exist
-
-* HTTP 404
-
-### Invalid path (not a file)
-
-* HTTP 400
-
-### Internal error
-
-* HTTP 500
-
----
-
-## 🧠 What the System Does Now
-
-```
+```text
 API request
-→ validate input
-→ create job_id
-→ create job folder
-→ copy input file
-→ write metadata (meta.json)
-→ write trace (trace.json)
-→ write logs (logs.jsonl)
-→ return job_id
+-> validate input
+-> create job_id
+-> create job folder
+-> copy input file
+-> write initial metadata, trace, and log
+-> render PDF pages to PNG at requested DPI
+-> run local layout stub for rendered pages
+-> write per-page raw and normalized layout artifacts
+-> update meta.json, trace.json, and logs.jsonl
+-> return job_id
 ```
 
----
+## Current Limitations
 
-## ⚠️ Limitations (Current State)
-
-* No document parsing
-* No OCR
-* No layout detection
-* No processing stages
-* No service integration
-
-The system only creates and manages job artifacts.
-
----
-
-## 📌 Summary
-
-This is a minimal orchestrator that:
-
-* defines a stable API
-* creates reproducible jobs
-* stores all job data on disk
-
-It is the foundation for a document processing pipeline.
+- Layout uses a deterministic stub, not PP-DocLayoutV3.
+- OCR is not implemented yet.
+- Assembly is not implemented yet.
+- The orchestrator does not call the HTTP layout service yet.

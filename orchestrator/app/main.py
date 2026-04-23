@@ -25,12 +25,13 @@ def health():
 @app.post("/run", response_model=RunResponse)
 def run(request: RunRequest):
     try:
-        job_id = start_job(request.input_path)
+        job_id = start_job(request.input_path, dpi=request.dpi)
 
         return RunResponse(
             status="accepted",
             job_id=job_id,
             input_path=request.input_path,
+            dpi=request.dpi,
         )
 
     except FileNotFoundError as e:

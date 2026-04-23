@@ -8,14 +8,17 @@ This module is responsible only for high-level orchestration:
 - copy original file
 - build initial metadata
 - persist initial artifacts
+- prepare PDF pages for layout
+- run the stub-compatible layout stage
 - return job_id
 
 IMPORTANT:
-This is still NOT doing OCR yet.
-This step only creates a persistent job on disk.
+This is still NOT doing OCR yet. Layout currently uses a deterministic
+service-shaped stub so the artifact contract can be exercised before the real
+PP-DocLayoutV3 container is connected.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from orchestrator.app.config import OUTPUT_DIR
 from orchestrator.app.job_metadata import (
@@ -30,9 +33,11 @@ from orchestrator.app.job_workspace import (
     generate_job_id,
     validate_input_file,
 )
+from orchestrator.app.layout_stage import run_layout_stage
+from orchestrator.app.preparing_for_layout import run_preparing_for_layout_stage
 
 
-def start_job(input_path: str) -> str:
+def start_job(input_path: str, dpi: int = 300) -> str:
     """
     Entry point for pipeline execution.
 
@@ -42,7 +47,9 @@ def start_job(input_path: str) -> str:
     3. Create job folder structure
     4. Copy original file
     5. Build meta.json / trace.json / logs.jsonl
-    6. Return job_id
+    6. Render PDF pages for layout
+    7. Run layout stage stub
+    8. Return job_id
     """
     # ---- 1. Validate input ----
     src = validate_input_file(input_path)
@@ -58,7 +65,7 @@ def start_job(input_path: str) -> str:
     copied_file = copy_original_file(src, paths["original_dir"])
 
     # ---- 5. Build metadata artifacts ----
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(UTC).isoformat()
 
     meta = build_initial_meta(
         job_id=job_id,
@@ -87,8 +94,31 @@ def start_job(input_path: str) -> str:
     write_json(job_dir / "trace.json", trace)
     append_log_line(job_dir / "logs.jsonl", log_line)
 
+    # ---- 6. Prepare PDF pages for layout ----
+    rendered_pages = run_preparing_for_layout_stage(
+        job_id=job_id,
+        copied_file=copied_file,
+        paths=paths,
+        meta=meta,
+        trace=trace,
+        dpi=dpi,
+    )
+    write_json(job_dir / "meta.json", meta)
+    write_json(job_dir / "trace.json", trace)
+
+    # ---- 7. Run layout stage stub ----
+    run_layout_stage(
+        job_id=job_id,
+        copied_file=copied_file,
+        paths=paths,
+        meta=meta,
+        trace=trace,
+        rendered_pages=rendered_pages,
+    )
+    write_json(job_dir / "meta.json", meta)
+    write_json(job_dir / "trace.json", trace)
+
     # ---- Future pipeline stages placeholders ----
-    # TODO: layout stage
     # TODO: OCR stage
     # TODO: assembly stage
 
