@@ -216,9 +216,9 @@ For that reason:
 image/chart/header_image/footer_image -> vision service
 ```
 
-The vision service is not implemented yet. Routing still marks these blocks so
-future pipeline stages can keep them pending or emit placeholders in the final
-Markdown.
+The vision service is not implemented yet. The OCR stage records these blocks in
+`debug/vision_pending_manifest.json` so future assembly can keep them pending or
+emit placeholders in the final Markdown.
 
 ## OCR Direction
 
@@ -263,8 +263,10 @@ Expected response direction:
 }
 ```
 
-This OCR contract is not implemented yet. The routing module is the foundation
-that will feed it.
+This OCR contract is implemented in `shared/contracts/ocr.py`. The current
+worker is `ocr_stub`, which validates crop paths and returns deterministic
+placeholder content. A real GLM-OCR-compatible worker should implement the same
+contract.
 
 ## Assembly Implications
 
@@ -287,11 +289,9 @@ differently.
 
 ## Current Limitations
 
-- The pipeline does not call the routing module yet.
-- The OCR service contract is not implemented yet.
 - The current layout service normalizes PP-DocLayoutV3 labels into a smaller
   canonical set, so downstream stages may lose native label detail until the
   normalized layout artifact is extended.
-- Crop generation currently targets `title` and `text` blocks. A future routing
-  stage should create or reuse crops for all blocks that are routed to OCR or
-  vision.
+- The OCR stage currently calls `ocr_stub`; real GLM-OCR is not integrated yet.
+- The vision service is not implemented yet. Image and chart crops are recorded
+  as pending.

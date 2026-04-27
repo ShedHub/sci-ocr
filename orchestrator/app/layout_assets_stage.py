@@ -13,10 +13,10 @@ from time import perf_counter
 
 from PIL import Image, ImageDraw, ImageFont
 
+from orchestrator.app.block_routing import route_layout_block
 from orchestrator.app.job_metadata import append_log_line, write_json
 
 
-CROPPABLE_BLOCK_TYPES = {"title", "text"}
 BLOCK_COLORS = {
     "title": "#e11d48",
     "text": "#2563eb",
@@ -76,6 +76,8 @@ def create_page_layout_assets(
         draw = ImageDraw.Draw(overlay)
 
         for block in normalized_layout["blocks"]:
+            routed_block = route_layout_block(block)
+            routing = routed_block["routing"]
             block_type = block["type"]
             color = BLOCK_COLORS.get(block_type, "#111827")
             box = clamp_bbox(block["bbox"], source.width, source.height)
@@ -87,9 +89,6 @@ def create_page_layout_assets(
                 color=color,
             )
 
-            if block_type not in CROPPABLE_BLOCK_TYPES:
-                continue
-
             crop_filename = f"{safe_filename(block['block_id'])}.png"
             crop_path = page_crops_dir / crop_filename
             source.crop(box).save(crop_path)
@@ -98,8 +97,11 @@ def create_page_layout_assets(
                     "page_number": page_number,
                     "block_id": block["block_id"],
                     "type": block_type,
+                    "layout_label": block.get("layout_label"),
                     "bbox": list(box),
+                    "order": block["order"],
                     "image_path": str(crop_path.resolve()),
+                    "routing": routing,
                 }
             )
 

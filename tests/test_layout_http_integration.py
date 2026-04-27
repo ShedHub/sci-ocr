@@ -11,6 +11,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from orchestrator.app import pipeline  # noqa: E402
+from orchestrator.app import ocr_stage  # noqa: E402
 
 
 LAYOUT_SERVICE_URL = os.getenv("LAYOUT_SERVICE_URL", "http://127.0.0.1:8001")
@@ -78,6 +79,30 @@ def test_orchestrator_calls_real_layout_stub(tmp_path, monkeypatch) -> None:
 
     output_dir = tmp_path / "jobs" / "output"
     monkeypatch.setattr(pipeline, "OUTPUT_DIR", output_dir)
+    monkeypatch.setattr(ocr_stage, "check_ocr_service_ready", lambda *_: {})
+
+    def fake_call_ocr_service(request: dict, *_args, **_kwargs) -> dict:
+        return {
+            "status": "completed",
+            "job_id": request["job_id"],
+            "document_id": request["document_id"],
+            "page_number": request["page_number"],
+            "block_id": request["block_id"],
+            "content_role": request["content_role"],
+            "recognition_task": request["recognition_task"],
+            "format": request["requested_format"],
+            "content": f"ocr:{request['block_id']}",
+            "confidence": 1.0,
+            "model": {
+                "name": "ocr_stub",
+                "version": "0.1.0",
+            },
+            "warnings": [],
+            "error": None,
+            "service_time_ms": 1,
+        }
+
+    monkeypatch.setattr(ocr_stage, "call_ocr_service", fake_call_ocr_service)
 
     job_id = pipeline.start_job(str(input_file), dpi=300)
     job_dir = output_dir / job_id
@@ -94,7 +119,7 @@ def test_orchestrator_calls_real_layout_stub(tmp_path, monkeypatch) -> None:
         )
     )
 
-    assert meta["status"] == "layout_assets_completed"
+    assert meta["status"] == "ocr_completed"
     assert meta["stages"][1]["layout_service_url"] == LAYOUT_SERVICE_URL
     assert raw["model"]["name"] == "layout_stub"
     assert raw["image"]["width"] > 0

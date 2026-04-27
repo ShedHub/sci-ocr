@@ -7,10 +7,12 @@ services:
       - "8000:8000"
     environment:
       LAYOUT_SERVICE_URL: http://layout_ppdoclayoutv3_cpu:8000
+      OCR_SERVICE_URL: http://ocr_stub:8000
     volumes:
       - ./jobs:/app/jobs
     depends_on:
       - layout_ppdoclayoutv3_cpu
+      - ocr_stub
 
   layout_stub:
     build:
@@ -36,9 +38,12 @@ services:
 
   ocr_stub:
     build:
-      context: ./services/ocr_stub
+      context: .
+      dockerfile: services/ocr_stub/Dockerfile
     ports:
       - "8002:8000"
+    volumes:
+      - ./jobs:/app/jobs
 
   assembly_stub:
     build:

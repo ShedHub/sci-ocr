@@ -15,7 +15,8 @@ The current implementation focuses on the foundation:
 - filesystem artifacts
 - PDF-to-PNG page preparation for layout
 - HTTP-backed stub-first service boundaries
-- deterministic block routing rules for future OCR and vision workers
+- deterministic block routing rules for OCR and future vision workers
+- OCR HTTP boundary with a contract-compatible stub worker
 
 ## Orchestrator
 
@@ -29,6 +30,8 @@ The orchestrator owns high-level pipeline flow:
 - call the layout service through a stable HTTP contract
 - normalize service output for downstream stages
 - route layout blocks to the next worker service
+- call the OCR service for OCR-routed crops
+- write a pending vision manifest for image and chart crops
 
 The orchestrator must not contain model-specific inference logic.
 
@@ -60,12 +63,73 @@ formula blocks   -> OCR service -> latex
 image/chart      -> future vision service
 ```
 
-This keeps the orchestrator in charge of pipeline decisions while allowing the
-OCR and vision services to stay narrow worker services. The intended OCR worker
-is GLM-OCR or a compatible service, but the routing module does not depend on a
-specific OCR implementation.
+The OCR stage consumes these routing decisions. It sends only OCR-routed crops
+to the configured OCR worker. Image and chart crops are not sent to OCR; they
+are written to `debug/vision_pending_manifest.json` until the future vision
+service exists.
 
 Detailed routing rules are documented in `docs/BLOCK_ROUTING.md`.
+
+## OCR Service
+
+OCR is designed as an external persistent HTTP worker service.
+
+Responsibilities:
+
+- expose liveness through `GET /health`
+- expose model readiness through `GET /ready`
+- accept one cropped layout block through `POST /ocr`
+- return recognized content in the format requested by the orchestrator
+
+The current implementation is `ocr_stub`. It validates the crop path and returns
+deterministic placeholder content. The planned real backend is GLM-OCR or a
+compatible worker service.
+
+The request and response schemas live in `shared/contracts/ocr.py`. Both the
+orchestrator and OCR service import this contract so the stub can be replaced by
+a real OCR worker without changing the orchestrator boundary.
+
+OCR request direction:
+
+```json
+{
+  "job_id": "job-0001",
+  "document_id": "paper.pdf",
+  "page_number": 1,
+  "block_id": "p1_b7",
+  "block_type": "table",
+  "layout_label": "table",
+  "content_role": "table",
+  "recognition_task": "table",
+  "requested_format": "markdown",
+  "image_path": "/app/jobs/output/job-0001/assets/crops/page_0001/p1_b7.png",
+  "bbox": [120, 300, 900, 620],
+  "order": 7
+}
+```
+
+OCR response direction:
+
+```json
+{
+  "status": "completed",
+  "job_id": "job-0001",
+  "page_number": 1,
+  "block_id": "p1_b7",
+  "content_role": "table",
+  "recognition_task": "table",
+  "format": "markdown",
+  "content": "| A | B |\\n| --- | --- |\\n| 1 | 2 |",
+  "confidence": null,
+  "model": {
+    "name": "ocr_stub",
+    "version": "0.1.0"
+  },
+  "warnings": [],
+  "error": null,
+  "service_time_ms": 1234
+}
+```
 
 ## Layout Service
 
@@ -148,6 +212,9 @@ Orchestrator owns:
 - normalized artifact persistence
 - crop generation from bbox
 - routing blocks to OCR or future vision pipelines
+- OCR request orchestration
+- raw and normalized OCR artifact persistence
+- pending manifest persistence for future vision blocks
 
 Routing module owns:
 
@@ -156,11 +223,12 @@ Routing module owns:
 - selecting the requested output format (`markdown`, `latex`, or `none`)
 - preserving content roles used later by Markdown assembly
 
-OCR service owns, once implemented:
+OCR service owns:
 
-- recognizing text-like block crops
+- recognizing text-like block crops as Markdown
 - recognizing table block crops as Markdown
 - recognizing formula block crops as LaTeX
+- reporting model metadata and service warnings
 
 Future vision service owns:
 
@@ -178,3 +246,11 @@ Implementation order:
 5. Replace `layout_stub` with `PP-DocLayoutV3` behind the same contract.
 
 The downstream pipeline must consume only normalized layout artifacts.
+
+OCR follows the same stub-first strategy:
+
+1. Define the shared OCR contract.
+2. Implement `ocr_stub` with `GET /health`, `GET /ready`, and `POST /ocr`.
+3. Make the orchestrator call the OCR service for OCR-routed crops.
+4. Persist raw and normalized OCR artifacts.
+5. Replace `ocr_stub` with a GLM-OCR-compatible worker behind the same contract.

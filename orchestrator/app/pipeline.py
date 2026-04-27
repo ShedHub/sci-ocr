@@ -10,11 +10,13 @@ This module is responsible only for high-level orchestration:
 - persist initial artifacts
 - prepare PDF pages for layout
 - call the external layout service
+- create layout assets and routed crops
+- call the external OCR service for OCR-routed crops
 - return job_id
 
 IMPORTANT:
-This is still NOT doing OCR yet. Layout is delegated through the same HTTP
-contract that will later be backed by PP-DocLayoutV3.
+Layout and OCR are delegated through HTTP contracts so real model services can
+replace stubs without changing the orchestrator pipeline.
 """
 
 from datetime import UTC, datetime
@@ -34,6 +36,7 @@ from orchestrator.app.job_workspace import (
 )
 from orchestrator.app.layout_assets_stage import run_layout_assets_stage
 from orchestrator.app.layout_stage import run_layout_stage
+from orchestrator.app.ocr_stage import run_ocr_stage
 from orchestrator.app.preparing_for_layout import run_preparing_for_layout_stage
 
 
@@ -49,7 +52,9 @@ def start_job(input_path: str, dpi: int = 300) -> str:
     5. Build meta.json / trace.json / logs.jsonl
     6. Render PDF pages for layout
     7. Run layout service stage
-    8. Return job_id
+    8. Create layout-derived crops and overlays
+    9. Run OCR service stage for OCR-routed crops
+    10. Return job_id
     """
     # ---- 1. Validate input ----
     src = validate_input_file(input_path)
@@ -119,7 +124,7 @@ def start_job(input_path: str, dpi: int = 300) -> str:
     write_json(job_dir / "trace.json", trace)
 
     # ---- 8. Create layout-derived crops and visual overlays ----
-    run_layout_assets_stage(
+    layout_asset_pages = run_layout_assets_stage(
         job_id=job_id,
         paths=paths,
         meta=meta,
@@ -129,8 +134,19 @@ def start_job(input_path: str, dpi: int = 300) -> str:
     write_json(job_dir / "meta.json", meta)
     write_json(job_dir / "trace.json", trace)
 
+    # ---- 9. Run OCR service stage for OCR-routed crops ----
+    run_ocr_stage(
+        job_id=job_id,
+        document_id=copied_file.name,
+        paths=paths,
+        meta=meta,
+        trace=trace,
+        layout_asset_pages=layout_asset_pages,
+    )
+    write_json(job_dir / "meta.json", meta)
+    write_json(job_dir / "trace.json", trace)
+
     # ---- Future pipeline stages placeholders ----
-    # TODO: OCR stage
     # TODO: assembly stage
 
     return job_id
