@@ -32,6 +32,7 @@ from orchestrator.app.job_workspace import (
     generate_job_id,
     validate_input_file,
 )
+from orchestrator.app.layout_assets_stage import run_layout_assets_stage
 from orchestrator.app.layout_stage import run_layout_stage
 from orchestrator.app.preparing_for_layout import run_preparing_for_layout_stage
 
@@ -106,13 +107,24 @@ def start_job(input_path: str, dpi: int = 300) -> str:
     write_json(job_dir / "trace.json", trace)
 
     # ---- 7. Run layout service stage ----
-    run_layout_stage(
+    normalized_layout_artifacts = run_layout_stage(
         job_id=job_id,
         copied_file=copied_file,
         paths=paths,
         meta=meta,
         trace=trace,
         rendered_pages=rendered_pages,
+    )
+    write_json(job_dir / "meta.json", meta)
+    write_json(job_dir / "trace.json", trace)
+
+    # ---- 8. Create layout-derived crops and visual overlays ----
+    run_layout_assets_stage(
+        job_id=job_id,
+        paths=paths,
+        meta=meta,
+        trace=trace,
+        normalized_artifact_paths=normalized_layout_artifacts,
     )
     write_json(job_dir / "meta.json", meta)
     write_json(job_dir / "trace.json", trace)

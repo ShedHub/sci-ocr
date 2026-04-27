@@ -11,9 +11,10 @@
 - Add shared Docker volume configuration for job artifacts
 - Add layout service failure persistence in `meta.json`, `trace.json`, and `logs.jsonl`
 - Add an optional integration test for the real HTTP layout boundary
+- Add shared Pydantic schemas for the layout service request/response contract
 
 ## Next
 
-- Add schema validation for layout request/response payloads
-- Replace `layout_stub` backend with PP-DocLayoutV3
+- Stabilize CPU PP-DocLayoutV3 inference quality and label mapping
 - Add OCR and assembly stages
+- Add a separate GPU PP-DocLayoutV3 container and orchestrator backend switch

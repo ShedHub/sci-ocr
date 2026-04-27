@@ -10,7 +10,15 @@ __pycache__/
 jobs/input/
 jobs/output/
 
-# Models (future)
+# Models
+models/*
+!models/README.md
+!models/layout/
+models/layout/*
+!models/layout/.gitkeep
+!models/ocr/
+models/ocr/*
+!models/ocr/.gitkeep
 *.safetensors
 *.bin
 *.onnx

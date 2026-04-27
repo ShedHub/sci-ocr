@@ -26,7 +26,17 @@ def create_test_pdf(path: Path) -> None:
     document.close()
 
 
-def require_layout_stub() -> None:
+def write_probe_png(path: Path) -> None:
+    # layout_stub only reads the PNG signature and IHDR width/height bytes.
+    path.write_bytes(
+        b"\x89PNG\r\n\x1a\n"
+        + b"\x00\x00\x00\rIHDR"
+        + (1).to_bytes(4, "big")
+        + (1).to_bytes(4, "big")
+    )
+
+
+def require_layout_stub_can_read_local_paths(probe_image: Path) -> None:
     try:
         response = httpx.get(
             f"{LAYOUT_SERVICE_URL.rstrip('/')}/ready",
@@ -37,9 +47,31 @@ def require_layout_stub() -> None:
     except httpx.HTTPError as exc:
         pytest.skip(f"layout_stub is not available at {LAYOUT_SERVICE_URL}: {exc}")
 
+    write_probe_png(probe_image)
+    try:
+        response = httpx.post(
+            f"{LAYOUT_SERVICE_URL.rstrip('/')}/layout",
+            json={
+                "job_id": "probe",
+                "document_id": "probe.pdf",
+                "page_number": 1,
+                "image_path": str(probe_image.resolve()),
+            },
+            timeout=2.0,
+            trust_env=False,
+        )
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 400:
+            pytest.skip(
+                "layout_stub is reachable, but it cannot read local orchestrator "
+                f"paths from this process: {exc.response.text}"
+            )
+        raise
+
 
 def test_orchestrator_calls_real_layout_stub(tmp_path, monkeypatch) -> None:
-    require_layout_stub()
+    require_layout_stub_can_read_local_paths(tmp_path / "probe.png")
 
     input_file = tmp_path / "input.pdf"
     create_test_pdf(input_file)
@@ -62,7 +94,7 @@ def test_orchestrator_calls_real_layout_stub(tmp_path, monkeypatch) -> None:
         )
     )
 
-    assert meta["status"] == "layout_completed"
+    assert meta["status"] == "layout_assets_completed"
     assert meta["stages"][1]["layout_service_url"] == LAYOUT_SERVICE_URL
     assert raw["model"]["name"] == "layout_stub"
     assert raw["image"]["width"] > 0

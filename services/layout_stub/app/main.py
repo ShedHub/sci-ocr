@@ -1,7 +1,9 @@
 from fastapi import FastAPI
 from fastapi import HTTPException
 
-from .service import LayoutRequest, get_ready, get_status, run_layout
+from shared.contracts.layout import LayoutReadyResponse, LayoutRequest, LayoutResponse
+
+from .service import get_ready, get_status, run_layout
 
 
 app = FastAPI(title="layout_stub")
@@ -13,12 +15,12 @@ def health() -> dict[str, str]:
 
 
 @app.get("/ready")
-def ready() -> dict[str, str]:
+def ready() -> LayoutReadyResponse:
     return get_ready()
 
 
-@app.post("/layout")
-def layout(request: LayoutRequest) -> dict:
+@app.post("/layout", response_model=LayoutResponse)
+def layout(request: LayoutRequest) -> LayoutResponse:
     try:
         return run_layout(request)
     except ValueError as exc:

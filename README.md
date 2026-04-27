@@ -23,10 +23,14 @@ The system currently supports:
 - optional 400 DPI high-quality rendering through the `dpi` request field
 - HTTP layout service calls for rendered pages
 - layout stub service with `GET /health`, `GET /ready`, and `POST /layout`
+- shared Pydantic schemas for the layout service request/response contract
 - raw and normalized layout artifacts from the HTTP service boundary
+- layout visual overlays in `assets/layout/page_XXXX_layout.png`
+- `title` and `text` block crops in `assets/crops/page_XXXX/`
 
-OCR, PP-DocLayoutV3 inference, crop generation, and assembly are not
-implemented yet.
+OCR and assembly are not implemented yet. A CPU PP-DocLayoutV3 service is
+present, but its runtime behavior and label quality still need manual
+end-to-end validation before it is treated as stable.
 
 ## Project Structure
 
@@ -45,8 +49,12 @@ sci-ocr/
 |   +-- output/                    # Job results
 +-- services/
 |   +-- layout_stub/               # Layout HTTP stub
+|   +-- layout_ppdoclayoutv3_cpu/  # CPU PP-DocLayoutV3 service
 |   +-- ocr_stub/                  # OCR service placeholder
 |   +-- assembly_stub/             # Assembly service placeholder
++-- shared/
+|   +-- contracts/                 # Shared service boundary schemas
++-- models/                       # Local model folders; weights ignored by Git
 +-- docs/
 +-- scripts/
 +-- tests/
@@ -81,7 +89,12 @@ uvicorn services.layout_stub.app.main:app --host 127.0.0.1 --port 8001
 ```
 
 The orchestrator reads `LAYOUT_SERVICE_URL` from the environment. If omitted,
-it uses `http://127.0.0.1:8001`.
+it uses `http://127.0.0.1:8001`. Docker Compose points it at
+`layout_ppdoclayoutv3_cpu`; switch it back to `layout_stub` for stub-only runs.
+
+Current real layout inference is CPU-only. A separate GPU layout container will
+be added later, with orchestrator-level service selection through environment
+configuration.
 
 ## API
 
@@ -130,12 +143,16 @@ jobs/output/<job_id>/
 +-- preprocessed/
 +-- assets/
 |   +-- pages/
-|   |   +-- page_0001.png
+|   +-- crops/
+|   |   +-- page_0001/
+|   |       +-- p1_b1.png
 |   +-- layout/
+|       +-- page_0001_layout.png
 +-- debug/
 |   +-- preparing_for_layout.json
 |   +-- layout_raw_page_0001.json
 |   +-- layout_normalized_page_0001.json
+|   +-- layout_assets.json
 +-- meta.json
 +-- trace.json
 +-- logs.jsonl
@@ -154,14 +171,16 @@ API request
 -> check HTTP layout service readiness
 -> call HTTP layout service for each rendered page
 -> write per-page raw and normalized layout artifacts
+-> create layout overlays and title/text block crops
 -> update meta.json, trace.json, and logs.jsonl
 -> return job_id
 ```
 
 ## Current Limitations
 
-- Layout uses a deterministic stub, not PP-DocLayoutV3.
+- PP-DocLayoutV3 is wired as a CPU-only layout service, but still needs
+  end-to-end runtime and quality validation.
 - OCR is not implemented yet.
 - Assembly is not implemented yet.
-- Docker Compose currently wires the layout boundary to `layout_stub`, not the
-  real PP-DocLayoutV3 backend.
+- A separate GPU layout container and orchestrator backend switch are planned
+  for the future.

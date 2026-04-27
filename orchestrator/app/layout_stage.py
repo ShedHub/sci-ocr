@@ -12,6 +12,12 @@ import httpx
 
 from orchestrator.app.config import LAYOUT_SERVICE_URL
 from orchestrator.app.job_metadata import append_log_line, write_json
+from shared.contracts.layout import (
+    LayoutReadyResponse,
+    LayoutRequest,
+    LayoutResponse,
+    NormalizedLayoutArtifact,
+)
 
 
 LAYOUT_TIMEOUT_SECONDS = 10.0
@@ -30,12 +36,13 @@ def build_layout_request(
     """
     Build the request shape expected by the future HTTP layout service.
     """
-    return {
-        "job_id": job_id,
-        "document_id": document_id,
-        "page_number": page_number,
-        "image_path": str(image_path.resolve()),
-    }
+    request = LayoutRequest(
+        job_id=job_id,
+        document_id=document_id,
+        page_number=page_number,
+        image_path=str(image_path.resolve()),
+    )
+    return request.model_dump()
 
 
 def check_layout_service_ready(
@@ -51,6 +58,7 @@ def check_layout_service_ready(
         response = httpx.get(ready_url, timeout=timeout, trust_env=False)
         response.raise_for_status()
         payload = response.json()
+        ready = LayoutReadyResponse.model_validate(payload)
     except httpx.HTTPStatusError as exc:
         raise LayoutServiceError(
             f"Layout service readiness check failed with HTTP "
@@ -65,12 +73,7 @@ def check_layout_service_ready(
             f"Layout service readiness response is not valid JSON: {exc}"
         ) from exc
 
-    if payload.get("status") != "ready":
-        raise LayoutServiceError(
-            f"Layout service is not ready at {ready_url}: {payload}"
-        )
-
-    return payload
+    return ready.model_dump()
 
 
 def call_layout_service(
@@ -92,6 +95,7 @@ def call_layout_service(
         )
         response.raise_for_status()
         payload = response.json()
+        validated = LayoutResponse.model_validate(payload)
     except httpx.HTTPStatusError as exc:
         raise LayoutServiceError(
             f"Layout request for page {request.get('page_number')} failed "
@@ -108,6 +112,8 @@ def call_layout_service(
             f"is not valid JSON: {exc}"
         ) from exc
 
+    payload = validated.model_dump()
+
     if payload.get("status") not in {"completed", "degraded"}:
         raise LayoutServiceError(
             f"Layout service returned non-success status for page "
@@ -121,25 +127,27 @@ def normalize_layout_response(raw: dict) -> dict:
     """
     Convert service output into the canonical layout format.
     """
+    raw = LayoutResponse.model_validate(raw).model_dump()
     source = raw["model"]["name"]
 
-    return {
-        "stage": "layout",
-        "status": raw["status"],
-        "source": source,
-        "job_id": raw["job_id"],
-        "document_id": raw.get("document_id"),
-        "page_number": raw["page_number"],
-        "image": raw["image"],
-        "blocks": [
+    normalized = NormalizedLayoutArtifact(
+        stage="layout",
+        status=raw["status"],
+        source=source,
+        job_id=raw["job_id"],
+        document_id=raw.get("document_id"),
+        page_number=raw["page_number"],
+        image=raw["image"],
+        blocks=[
             {
                 **block,
                 "source": source,
             }
             for block in raw["blocks"]
         ],
-        "warnings": raw.get("warnings", []),
-    }
+        warnings=raw.get("warnings", []),
+    )
+    return normalized.model_dump()
 
 
 def record_layout_failure(
@@ -205,7 +213,7 @@ def run_layout_stage(
     trace: dict,
     rendered_pages: list[dict],
     layout_service_url: str | None = None,
-) -> None:
+) -> list[str]:
     """
     Run the external layout stage and persist per-page artifacts.
     """
@@ -313,3 +321,5 @@ def run_layout_stage(
             "layout_service_url": service_url,
         },
     )
+
+    return normalized_artifacts

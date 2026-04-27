@@ -70,9 +70,12 @@ def test_start_job_creates_layout_artifacts(tmp_path, monkeypatch) -> None:
     assert (job_dir / "logs.jsonl").is_file()
     assert (job_dir / "original" / "input.pdf").is_file()
     assert (job_dir / "assets" / "pages" / "page_0001.png").is_file()
+    assert (job_dir / "assets" / "crops" / "page_0001" / "p1_b1.png").is_file()
+    assert (job_dir / "assets" / "layout" / "page_0001_layout.png").is_file()
     assert (job_dir / "debug" / "preparing_for_layout.json").is_file()
     assert (job_dir / "debug" / "layout_raw_page_0001.json").is_file()
     assert (job_dir / "debug" / "layout_normalized_page_0001.json").is_file()
+    assert (job_dir / "debug" / "layout_assets.json").is_file()
 
     meta = json.loads((job_dir / "meta.json").read_text(encoding="utf-8"))
     preparing = json.loads(
@@ -86,10 +89,12 @@ def test_start_job_creates_layout_artifacts(tmp_path, monkeypatch) -> None:
         )
     )
 
-    assert meta["status"] == "layout_completed"
+    assert meta["status"] == "layout_assets_completed"
     assert meta["stages"][0]["name"] == "preparing_for_layout"
     assert meta["stages"][0]["dpi"] == 400
     assert meta["stages"][1]["name"] == "layout"
+    assert meta["stages"][2]["name"] == "layout_assets"
+    assert meta["stages"][2]["crops"] == 1
     assert preparing["dpi"] == 400
     assert preparing["pages"][0]["format"] == "png"
     assert normalized["source"] == "layout_stub"

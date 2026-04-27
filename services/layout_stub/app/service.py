@@ -2,30 +2,23 @@ from time import perf_counter
 from pathlib import Path
 import struct
 
-from pydantic import BaseModel, Field
+from shared.contracts.layout import LayoutReadyResponse, LayoutRequest, LayoutResponse
 
 
 LAYOUT_STUB_VERSION = "0.1.0"
-
-
-class LayoutRequest(BaseModel):
-    job_id: str
-    document_id: str | None = None
-    page_number: int = Field(ge=1)
-    image_path: str
 
 
 def get_status() -> dict[str, str]:
     return {"status": "ok", "service": "layout_stub"}
 
 
-def get_ready() -> dict[str, str]:
-    return {
-        "status": "ready",
-        "service": "layout_stub",
-        "model": "layout_stub",
-        "version": LAYOUT_STUB_VERSION,
-    }
+def get_ready() -> LayoutReadyResponse:
+    return LayoutReadyResponse(
+        status="ready",
+        service="layout_stub",
+        model="layout_stub",
+        version=LAYOUT_STUB_VERSION,
+    )
 
 
 def read_png_dimensions(image_path: str) -> tuple[int, int]:
@@ -46,25 +39,25 @@ def read_png_dimensions(image_path: str) -> tuple[int, int]:
     return width, height
 
 
-def run_layout(request: LayoutRequest) -> dict:
+def run_layout(request: LayoutRequest) -> LayoutResponse:
     started = perf_counter()
     image_width, image_height = read_png_dimensions(request.image_path)
 
-    response = {
-        "status": "completed",
-        "job_id": request.job_id,
-        "document_id": request.document_id,
-        "page_number": request.page_number,
-        "model": {
+    return LayoutResponse(
+        status="completed",
+        job_id=request.job_id,
+        document_id=request.document_id,
+        page_number=request.page_number,
+        model={
             "name": "layout_stub",
             "version": LAYOUT_STUB_VERSION,
         },
-        "image": {
+        image={
             "path": request.image_path,
             "width": image_width,
             "height": image_height,
         },
-        "blocks": [
+        blocks=[
             {
                 "block_id": f"p{request.page_number}_b1",
                 "type": "text",
@@ -73,11 +66,9 @@ def run_layout(request: LayoutRequest) -> dict:
                 "order": 1,
             }
         ],
-        "warnings": [
+        warnings=[
             "layout_stub read the rendered PNG dimensions but did not infer blocks from image content"
         ],
-        "error": None,
-    }
-
-    response["service_time_ms"] = int((perf_counter() - started) * 1000)
-    return response
+        error=None,
+        service_time_ms=int((perf_counter() - started) * 1000),
+    )

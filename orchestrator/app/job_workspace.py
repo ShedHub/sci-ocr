@@ -72,6 +72,7 @@ def create_job_dirs(job_dir: Path) -> dict[str, Path]:
         "preprocessed_dir": job_dir / "preprocessed",
         "assets_dir": job_dir / "assets",
         "pages_dir": job_dir / "assets" / "pages",
+        "crops_dir": job_dir / "assets" / "crops",
         "layout_dir": job_dir / "assets" / "layout",
         "debug_dir": job_dir / "debug",
     }

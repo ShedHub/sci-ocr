@@ -22,6 +22,7 @@ def build_workspace_snapshot(paths: dict[str, Path]) -> dict[str, str]:
         "preprocessed_dir": str(paths["preprocessed_dir"].resolve()),
         "assets_dir": str(paths["assets_dir"].resolve()),
         "pages_dir": str(paths["pages_dir"].resolve()),
+        "crops_dir": str(paths["crops_dir"].resolve()),
         "layout_dir": str(paths["layout_dir"].resolve()),
         "debug_dir": str(paths["debug_dir"].resolve()),
     }

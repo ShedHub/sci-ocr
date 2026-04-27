@@ -3,3 +3,4 @@ pydantic==2.9.2
 PyMuPDF==1.26.6
 uvicorn==0.30.6
 httpx==0.28.1
+Pillow==11.0.0

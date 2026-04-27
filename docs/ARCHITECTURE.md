@@ -47,6 +47,19 @@ The planned real backend is `PP-DocLayoutV3`.
 During development, `layout_stub` implements the same API shape without loading
 the real model.
 
+The request and response schemas live in `shared/contracts/layout.py`. Both the
+orchestrator and layout service import this contract so backend replacement does
+not change the HTTP boundary.
+
+The PP-DocLayoutV3 service keeps backend-specific label mapping in its own
+adapter module. Only canonical layout block types leave the service boundary.
+
+The current PP-DocLayoutV3 runtime target is CPU-only and lives in
+`services/layout_ppdoclayoutv3_cpu/`. A future GPU runtime should be added as a
+separate service/container rather than changing the CPU service in place. The
+orchestrator should keep selecting the active layout backend through
+`LAYOUT_SERVICE_URL`.
+
 ## Persistent Container Rule
 
 The layout container must not be started once per page.
