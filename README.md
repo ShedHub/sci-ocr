@@ -27,6 +27,7 @@ The system currently supports:
 - raw and normalized layout artifacts from the HTTP service boundary
 - layout visual overlays in `assets/layout/page_XXXX_layout.png`
 - `title` and `text` block crops in `assets/crops/page_XXXX/`
+- block routing rules that map layout labels to future OCR or vision workers
 
 OCR and assembly are not implemented yet. A CPU PP-DocLayoutV3 service is
 present, but its runtime behavior and label quality still need manual
@@ -42,6 +43,7 @@ sci-ocr/
 |       +-- pipeline.py             # Job creation and stage orchestration
 |       +-- preparing_for_layout.py # PDF-to-PNG rendering stage
 |       +-- layout_stage.py         # Local service-shaped layout stub stage
+|       +-- block_routing.py        # Layout block routing rules
 |       +-- schemas.py              # API request/response models
 |       +-- config.py               # Path configuration
 +-- jobs/
@@ -172,9 +174,30 @@ API request
 -> call HTTP layout service for each rendered page
 -> write per-page raw and normalized layout artifacts
 -> create layout overlays and title/text block crops
+-> provide routing rules for future OCR and vision stages
 -> update meta.json, trace.json, and logs.jsonl
 -> return job_id
 ```
+
+## Block Routing
+
+The routing layer lives in `orchestrator/app/block_routing.py`.
+
+It maps layout blocks to the downstream worker that should process them next:
+
+```text
+text-like blocks -> OCR -> markdown
+tables           -> OCR -> markdown
+formulas         -> OCR -> latex
+images/charts    -> future vision service
+```
+
+This module is deliberately deterministic and model-free. It does not call OCR
+yet. It prepares the architectural boundary so the next stage can send cropped
+blocks to a GLM-OCR-compatible worker while keeping images and charts for a
+separate future service.
+
+Detailed routing rules are documented in `docs/BLOCK_ROUTING.md`.
 
 ## Current Limitations
 
@@ -182,5 +205,6 @@ API request
   end-to-end runtime and quality validation.
 - OCR is not implemented yet.
 - Assembly is not implemented yet.
+- The routing module is present, but the pipeline does not call it yet.
 - A separate GPU layout container and orchestrator backend switch are planned
   for the future.

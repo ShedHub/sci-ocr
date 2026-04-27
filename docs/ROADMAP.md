@@ -12,9 +12,14 @@
 - Add layout service failure persistence in `meta.json`, `trace.json`, and `logs.jsonl`
 - Add an optional integration test for the real HTTP layout boundary
 - Add shared Pydantic schemas for the layout service request/response contract
+- Add deterministic block routing rules for OCR and future vision workers
 
 ## Next
 
 - Stabilize CPU PP-DocLayoutV3 inference quality and label mapping
+- Preserve native PP-DocLayoutV3 labels in normalized layout artifacts
+- Expand crop generation beyond `title` and `text` blocks
+- Integrate block routing into the orchestrator pipeline
+- Add an OCR service contract and `ocr_stub` using the routing output
 - Add OCR and assembly stages
 - Add a separate GPU PP-DocLayoutV3 container and orchestrator backend switch

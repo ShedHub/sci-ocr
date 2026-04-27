@@ -16,6 +16,7 @@ Current implemented scope:
 - Filesystem artifact system
 - PDF page rendering to PNG at 300 or 400 DPI
 - Service-ready layout contract in stub-first form
+- Deterministic block routing rules for future OCR and vision stages
 
 The core rule is that stage boundaries must stay stable. A backend such as
 `layout_stub` must be replaceable with `PP-DocLayoutV3` without changing
@@ -382,12 +383,111 @@ downstream stages consume them.
 The layout service returns structured blocks and coordinates. The orchestrator
 owns crop generation and downstream routing.
 
-Routing direction:
+Current canonical routing direction:
 
-- `title` and `text` go to the OCR pipeline.
-- `table` goes to the table pipeline.
-- `formula` goes to the formula pipeline.
-- `figure` goes to the image/vision pipeline.
+- `title` and `text` go to OCR as Markdown.
+- `table` goes to OCR as Markdown.
+- `formula` goes to OCR as LaTeX.
+- `figure` goes to the future image/vision pipeline.
+
+The routing rules are implemented in:
+
+```text
+orchestrator/app/block_routing.py
+```
+
+The detailed routing table is documented in:
+
+```text
+docs/BLOCK_ROUTING.md
+```
+
+### Routing Decision Shape
+
+Routing adds a deterministic decision to a layout block. The current decision
+shape is:
+
+```json
+{
+  "target_service": "ocr",
+  "recognition_task": "table",
+  "requested_format": "markdown",
+  "content_role": "table",
+  "route_reason": "table layout block"
+}
+```
+
+Field rules:
+
+- `target_service` is `ocr`, `vision`, or `skip`.
+- `recognition_task` is `text`, `table`, `formula`, `image`, `chart`, or `none`.
+- `requested_format` is `markdown`, `latex`, or `none`.
+- `content_role` preserves document semantics for assembly.
+- `route_reason` is human-readable debug context.
+
+### Native PP-DocLayoutV3 Routing
+
+PP-DocLayoutV3 supports more detailed native labels than the current normalized
+layout contract. The routing module can route the native labels directly when
+they are available.
+
+Text-like labels route to OCR with Markdown output:
+
+```text
+abstract
+algorithm
+aside_text
+content
+doc_title
+figure_title
+footer
+footnote
+header
+number
+paragraph_title
+reference
+reference_content
+seal
+text
+vertical_text
+vision_footnote
+```
+
+Table labels route to OCR with Markdown output:
+
+```text
+table
+```
+
+Formula labels route to OCR with LaTeX output:
+
+```text
+display_formula
+formula_number
+inline_formula
+```
+
+Image-like labels route to the future vision service:
+
+```text
+chart
+footer_image
+header_image
+image
+```
+
+Until the normalized layout artifact preserves native labels, downstream routing
+can fall back to the canonical `type` field.
+
+### OCR And Vision Split
+
+The project goal is PDF-to-Markdown conversion. For that reason, text-like
+blocks and tables should eventually enter a GLM-OCR-compatible service with
+Markdown requested as output. Formula blocks should request LaTeX output.
+
+Images and charts should not be sent to OCR. They are routed to a future vision
+service so they can be captioned, extracted, preserved as assets, or represented
+as Markdown placeholders during assembly.
 
 ## Backend Replacement Rule
 
@@ -417,9 +517,11 @@ Included now:
 - layout visual overlays
 - title/text block crop generation
 - CPU PP-DocLayoutV3 service scaffold behind the shared layout contract
+- block routing rules for OCR and future vision services
 
 Not included yet:
 
 - stabilized PP-DocLayoutV3 runtime and quality validation
+- pipeline integration for block routing
 - OCR
 - assembly

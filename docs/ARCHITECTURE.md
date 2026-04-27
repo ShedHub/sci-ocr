@@ -15,6 +15,7 @@ The current implementation focuses on the foundation:
 - filesystem artifacts
 - PDF-to-PNG page preparation for layout
 - HTTP-backed stub-first service boundaries
+- deterministic block routing rules for future OCR and vision workers
 
 ## Orchestrator
 
@@ -27,8 +28,44 @@ The orchestrator owns high-level pipeline flow:
 - render PDF pages into `assets/pages/page_XXXX.png`
 - call the layout service through a stable HTTP contract
 - normalize service output for downstream stages
+- route layout blocks to the next worker service
 
 The orchestrator must not contain model-specific inference logic.
+
+## Block Routing
+
+Block routing is the orchestration layer between layout and downstream workers.
+
+Layout answers:
+
+```text
+what block exists, where it is, and what layout type it has
+```
+
+Routing answers:
+
+```text
+which service should process this block, which task it should run, and which
+output format the pipeline expects
+```
+
+The routing rules live in `orchestrator/app/block_routing.py`.
+
+Current routing direction:
+
+```text
+text-like blocks -> OCR service -> markdown
+table blocks     -> OCR service -> markdown
+formula blocks   -> OCR service -> latex
+image/chart      -> future vision service
+```
+
+This keeps the orchestrator in charge of pipeline decisions while allowing the
+OCR and vision services to stay narrow worker services. The intended OCR worker
+is GLM-OCR or a compatible service, but the routing module does not depend on a
+specific OCR implementation.
+
+Detailed routing rules are documented in `docs/BLOCK_ROUTING.md`.
 
 ## Layout Service
 
@@ -110,7 +147,25 @@ Orchestrator owns:
 - raw artifact persistence
 - normalized artifact persistence
 - crop generation from bbox
-- routing blocks to OCR, table, formula, or figure pipelines
+- routing blocks to OCR or future vision pipelines
+
+Routing module owns:
+
+- mapping native layout labels to downstream service targets
+- selecting the recognition task (`text`, `table`, `formula`, `image`, `chart`)
+- selecting the requested output format (`markdown`, `latex`, or `none`)
+- preserving content roles used later by Markdown assembly
+
+OCR service owns, once implemented:
+
+- recognizing text-like block crops
+- recognizing table block crops as Markdown
+- recognizing formula block crops as LaTeX
+
+Future vision service owns:
+
+- processing image, figure, and chart block crops
+- returning visual descriptions, chart extraction, or Markdown placeholders
 
 ## Stub-First Path
 
