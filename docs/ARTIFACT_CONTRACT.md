@@ -18,6 +18,7 @@ Current implemented scope:
 - Service-ready layout contract in stub-first form
 - Deterministic block routing rules for OCR and future vision stages
 - Service-ready OCR contract in stub-first form
+- GLM-OCR worker behind the shared OCR contract
 - Deterministic assembly into a content stream and Markdown output
 
 The core rule is that stage boundaries must stay stable. A backend such as
@@ -532,7 +533,7 @@ image and returns recognized content in the format requested by the orchestrator
 The service may be implemented by:
 
 - `ocr_stub` during local development
-- a future GLM-OCR-compatible worker
+- `ocr_glm` for the local GLM-OCR model
 - another OCR backend later, as long as it implements the shared contract
 
 ### Endpoints
@@ -602,14 +603,37 @@ The OCR service returns recognized content in a service-shaped envelope.
   "content": "| A | B |\\n| --- | --- |\\n| 1 | 2 |",
   "confidence": 0.98,
   "model": {
-    "name": "ocr_stub",
-    "version": "0.1.0"
+    "name": "GLM-OCR",
+    "version": "local",
+    "backend": "ocr_glm"
   },
   "warnings": [],
   "error": null,
   "service_time_ms": 12
 }
 ```
+
+Docker Compose currently uses `ocr_glm`, so normalized OCR artifacts from a real
+Compose run should report `source: "GLM-OCR"` and model backend `ocr_glm`. The
+`ocr_stub` backend still reports `source: "ocr_stub"` in fast unit and local
+contract tests.
+
+Formula responses are stored as raw LaTeX without outer Markdown display
+wrappers. For example, the OCR worker should return:
+
+```text
+F _ {1} = \frac {2 P R}{P + R}
+```
+
+not:
+
+```text
+$$
+F _ {1} = \frac {2 P R}{P + R}
+$$
+```
+
+Assembly owns the final Markdown rendering of formula blocks.
 
 Status values:
 
@@ -825,6 +849,8 @@ Included now:
   preservation
 - block routing rules for OCR and future vision services
 - OCR service contract and OCR stub
+- GLM-OCR worker wired into Docker Compose
+- configurable layout and OCR HTTP timeouts for CPU model workers
 - orchestrator OCR stage for OCR-routed crops
 - pending vision manifest for image/chart crops
 - deterministic orchestrator assembly stage and Markdown output
@@ -832,6 +858,6 @@ Included now:
 Not included yet:
 
 - PP-DocLayoutV3 output quality validation on representative documents
-- real OCR backend
+- broader quality validation of GLM-OCR output on representative documents
 - vision service
 - real OCR or vision-enriched assembly content

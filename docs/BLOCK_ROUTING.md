@@ -222,9 +222,9 @@ emit placeholders in the final Markdown.
 
 ## OCR Direction
 
-The intended OCR worker is GLM-OCR or a compatible external service. The worker
-should receive one cropped block image and the route decision from the
-orchestrator.
+The Docker Compose OCR worker is now `ocr_glm`, a GLM-OCR-backed service behind
+the shared OCR contract. The worker receives one cropped block image and the
+route decision from the orchestrator.
 
 Expected direction:
 
@@ -264,9 +264,8 @@ Expected response direction:
 ```
 
 This OCR contract is implemented in `shared/contracts/ocr.py`. The current
-worker is `ocr_stub`, which validates crop paths and returns deterministic
-placeholder content. A real GLM-OCR-compatible worker should implement the same
-contract.
+Docker Compose worker is `ocr_glm`; `ocr_stub` remains available for fast local
+contract tests and deterministic smoke tests.
 
 ## Assembly Implications
 
@@ -291,6 +290,9 @@ differently.
 
 - PP-DocLayoutV3 output quality still needs validation on representative
   documents before the CPU service is treated as stable.
-- The OCR stage currently calls `ocr_stub`; real GLM-OCR is not integrated yet.
+- Docker Compose calls `ocr_glm` by default. `ocr_stub` is still useful for fast
+  local tests.
+- GLM-OCR CPU inference is slow because OCR-routed crops are processed one at a
+  time; batching, parallelism, or GPU execution are future performance work.
 - The vision service is not implemented yet. Image and chart crops are recorded
   as pending.

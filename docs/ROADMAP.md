@@ -23,11 +23,18 @@
 - Add representative PDF fixtures for text, tables, formulas, images, and charts
 - Add a job validation report script for layout/OCR/vision split inspection
 - Add deterministic orchestrator assembly stage for content stream and Markdown output
+- Add a GLM-OCR worker behind the shared OCR contract
+- Point Docker Compose OCR traffic at the GLM-OCR worker
+- Verify a full Docker Compose run with PP-DocLayoutV3 and GLM-OCR on
+  `formula_table_fixture.pdf`
+- Add configurable layout and OCR HTTP timeouts for CPU model workers
 
 ## Next
 
 - Validate CPU PP-DocLayoutV3 output quality on representative PDFs
-- Replace `ocr_stub` with a GLM-OCR-compatible worker
+- Validate GLM-OCR worker output quality on representative crops
+- Improve OCR throughput with batching, parallel crop processing, or GPU
+  execution
 - Add a future vision service for image and chart blocks
 - Improve assembly for multi-column reading order, paragraph merging, and
   figure/chart caption association

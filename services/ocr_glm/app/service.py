@@ -1,0 +1,229 @@
+import os
+from pathlib import Path
+from time import perf_counter
+from typing import Any
+
+from shared.contracts.ocr import OcrReadyResponse, OcrRequest, OcrResponse
+
+
+SERVICE_NAME = "ocr_glm"
+MODEL_NAME = "GLM-OCR"
+MODEL_VERSION = "local"
+DEFAULT_MODEL_DIR = "/models/ocr/glm-ocr"
+DEFAULT_MAX_NEW_TOKENS = 8192
+TASK_PROMPTS = {
+    "text": "Text Recognition:",
+    "table": "Table Recognition:",
+    "formula": "Formula Recognition:",
+}
+REQUIRED_MODEL_FILES = (
+    "config.json",
+    "generation_config.json",
+    "model.safetensors",
+    "preprocessor_config.json",
+    "tokenizer.json",
+    "tokenizer_config.json",
+)
+
+_processor = None
+_model = None
+_torch = None
+
+
+class GlmOcrUnavailable(RuntimeError):
+    """Raised when the local GLM-OCR runtime or model files are not ready."""
+
+
+def get_model_dir() -> Path:
+    return Path(os.getenv("OCR_MODEL_DIR", DEFAULT_MODEL_DIR))
+
+
+def get_max_new_tokens() -> int:
+    value = os.getenv("OCR_MAX_NEW_TOKENS")
+    if value is None:
+        return DEFAULT_MAX_NEW_TOKENS
+
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise GlmOcrUnavailable(f"OCR_MAX_NEW_TOKENS must be an integer: {value!r}") from exc
+
+    if parsed < 1:
+        raise GlmOcrUnavailable("OCR_MAX_NEW_TOKENS must be greater than zero")
+    return parsed
+
+
+def get_status() -> dict[str, str]:
+    return {"status": "ok", "service": SERVICE_NAME}
+
+
+def validate_model_files() -> Path:
+    model_dir = get_model_dir()
+    if not model_dir.is_dir():
+        raise GlmOcrUnavailable(f"model directory does not exist: {model_dir}")
+
+    missing_files = [
+        filename for filename in REQUIRED_MODEL_FILES if not (model_dir / filename).is_file()
+    ]
+    if missing_files:
+        raise GlmOcrUnavailable(
+            f"model directory is missing required files: {', '.join(missing_files)}"
+        )
+    return model_dir
+
+
+def load_model() -> tuple[Any, Any, Any]:
+    global _processor, _model, _torch
+    if _processor is not None and _model is not None and _torch is not None:
+        return _processor, _model, _torch
+
+    model_dir = validate_model_files()
+    try:
+        import torch
+        from transformers import AutoModelForImageTextToText, AutoProcessor
+
+        _processor = AutoProcessor.from_pretrained(str(model_dir))
+        _model = AutoModelForImageTextToText.from_pretrained(
+            pretrained_model_name_or_path=str(model_dir),
+            torch_dtype="auto",
+            device_map="auto",
+        )
+        _model.eval()
+        _torch = torch
+    except Exception as exc:
+        raise GlmOcrUnavailable(f"failed to load {MODEL_NAME} from {model_dir}: {exc}") from exc
+
+    return _processor, _model, _torch
+
+
+def get_ready() -> OcrReadyResponse:
+    validate_model_files()
+    load_model()
+    return OcrReadyResponse(
+        status="ready",
+        service=SERVICE_NAME,
+        model=MODEL_NAME,
+        version=MODEL_VERSION,
+    )
+
+
+def validate_crop_path(image_path: str) -> Path:
+    path = Path(image_path)
+    if not path.is_file():
+        raise FileNotFoundError(f"image_path does not exist or is not a file: {image_path}")
+    return path
+
+
+def prompt_for_task(recognition_task: str) -> str:
+    try:
+        return TASK_PROMPTS[recognition_task]
+    except KeyError as exc:
+        raise ValueError(f"Unsupported GLM-OCR recognition task: {recognition_task}") from exc
+
+
+def build_messages(image_path: Path, request: OcrRequest) -> list[dict[str, Any]]:
+    return [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "image",
+                    "url": str(image_path.resolve()),
+                },
+                {
+                    "type": "text",
+                    "text": prompt_for_task(request.recognition_task),
+                },
+            ],
+        }
+    ]
+
+
+def generate_content(image_path: Path, request: OcrRequest) -> str:
+    processor, model, torch = load_model()
+    messages = build_messages(image_path, request)
+
+    try:
+        inputs = processor.apply_chat_template(
+            messages,
+            tokenize=True,
+            add_generation_prompt=True,
+            return_dict=True,
+            return_tensors="pt",
+        ).to(model.device)
+        inputs.pop("token_type_ids", None)
+
+        with torch.inference_mode():
+            generated_ids = model.generate(
+                **inputs,
+                max_new_tokens=get_max_new_tokens(),
+            )
+
+        prompt_length = inputs["input_ids"].shape[1]
+        return processor.decode(
+            generated_ids[0][prompt_length:],
+            skip_special_tokens=True,
+        ).strip()
+    except Exception as exc:
+        raise ValueError(f"{MODEL_NAME} inference failed for {image_path}: {exc}") from exc
+
+
+def strip_markdown_code_fence(value: str) -> str:
+    text = value.strip()
+    if not text.startswith("```"):
+        return text
+
+    lines = text.splitlines()
+    if len(lines) >= 2 and lines[-1].strip() == "```":
+        return "\n".join(lines[1:-1]).strip()
+    return text
+
+
+def strip_latex_display_wrapper(value: str) -> str:
+    text = value.strip()
+    changed = True
+    while changed:
+        changed = False
+        for left, right in (("$$", "$$"), ("\\[", "\\]")):
+            if text.startswith(left) and text.endswith(right):
+                text = text[len(left) : len(text) - len(right)].strip()
+                changed = True
+    return text
+
+
+def normalize_recognized_content(content: str, request: OcrRequest) -> str:
+    text = strip_markdown_code_fence(content)
+    if request.recognition_task == "formula":
+        text = strip_latex_display_wrapper(text)
+    return text.strip()
+
+
+def run_ocr(request: OcrRequest) -> OcrResponse:
+    started = perf_counter()
+    image_path = validate_crop_path(request.image_path)
+    content = normalize_recognized_content(generate_content(image_path, request), request)
+
+    return OcrResponse(
+        status="completed",
+        job_id=request.job_id,
+        document_id=request.document_id,
+        page_number=request.page_number,
+        block_id=request.block_id,
+        content_role=request.content_role,
+        recognition_task=request.recognition_task,
+        format=request.requested_format,
+        content=content,
+        confidence=None,
+        model={
+            "name": MODEL_NAME,
+            "version": MODEL_VERSION,
+            "backend": SERVICE_NAME,
+            "metadata": {
+                "model_dir": str(get_model_dir()),
+                "max_new_tokens": get_max_new_tokens(),
+            },
+        },
+        warnings=[],
+        error=None,
+        service_time_ms=int((perf_counter() - started) * 1000),
+    )

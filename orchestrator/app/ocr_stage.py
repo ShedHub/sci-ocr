@@ -12,7 +12,7 @@ from time import perf_counter
 
 import httpx
 
-from orchestrator.app.config import OCR_SERVICE_URL
+from orchestrator.app.config import OCR_SERVICE_URL, OCR_TIMEOUT_SECONDS
 from orchestrator.app.job_metadata import append_log_line, write_json
 from shared.contracts.ocr import (
     NormalizedOcrArtifact,
@@ -20,9 +20,6 @@ from shared.contracts.ocr import (
     OcrRequest,
     OcrResponse,
 )
-
-
-OCR_TIMEOUT_SECONDS = 30.0
 
 
 class OcrServiceError(RuntimeError):

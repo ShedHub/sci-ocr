@@ -10,7 +10,7 @@ from pathlib import Path
 
 import httpx
 
-from orchestrator.app.config import LAYOUT_SERVICE_URL
+from orchestrator.app.config import LAYOUT_SERVICE_URL, LAYOUT_TIMEOUT_SECONDS
 from orchestrator.app.job_metadata import append_log_line, write_json
 from shared.contracts.layout import (
     LayoutReadyResponse,
@@ -18,10 +18,6 @@ from shared.contracts.layout import (
     LayoutResponse,
     NormalizedLayoutArtifact,
 )
-
-
-LAYOUT_TIMEOUT_SECONDS = 10.0
-
 
 class LayoutServiceError(RuntimeError):
     """Raised when the external layout service cannot complete a request."""

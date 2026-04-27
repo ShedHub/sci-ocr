@@ -9,6 +9,7 @@ __pycache__/
 # Outputs
 jobs/input/
 jobs/output/
+jobs/manual_test_logs/
 
 # Models
 models/*

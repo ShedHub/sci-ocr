@@ -7,12 +7,14 @@ services:
       - "8000:8000"
     environment:
       LAYOUT_SERVICE_URL: http://layout_ppdoclayoutv3_cpu:8000
-      OCR_SERVICE_URL: http://ocr_stub:8000
+      LAYOUT_TIMEOUT_SECONDS: 120
+      OCR_SERVICE_URL: http://ocr_glm:8000
+      OCR_TIMEOUT_SECONDS: 600
     volumes:
       - ./jobs:/app/jobs
     depends_on:
       - layout_ppdoclayoutv3_cpu
-      - ocr_stub
+      - ocr_glm
 
   layout_stub:
     build:
@@ -44,6 +46,19 @@ services:
       - "8002:8000"
     volumes:
       - ./jobs:/app/jobs
+
+  ocr_glm:
+    build:
+      context: .
+      dockerfile: services/ocr_glm/Dockerfile
+    ports:
+      - "8005:8000"
+    environment:
+      OCR_MODEL_DIR: /models/ocr/glm-ocr
+      OCR_MAX_NEW_TOKENS: 8192
+    volumes:
+      - ./jobs:/app/jobs
+      - ./models:/models:ro
 
   assembly_stub:
     build:

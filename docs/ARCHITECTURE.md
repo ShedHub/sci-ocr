@@ -16,7 +16,7 @@ The current implementation focuses on the foundation:
 - PDF-to-PNG page preparation for layout
 - HTTP-backed stub-first service boundaries
 - deterministic block routing rules for OCR and future vision workers
-- OCR HTTP boundary with a contract-compatible stub worker
+- OCR HTTP boundary with contract-compatible stub and GLM-OCR workers
 
 ## Orchestrator
 
@@ -82,9 +82,35 @@ Responsibilities:
 - accept one cropped layout block through `POST /ocr`
 - return recognized content in the format requested by the orchestrator
 
-The current implementation is `ocr_stub`. It validates the crop path and returns
-deterministic placeholder content. The planned real backend is GLM-OCR or a
-compatible worker service.
+Docker Compose uses the `ocr_glm` worker, which loads the local GLM-OCR model
+and implements the same shared contract. The `ocr_stub` worker remains available
+for fast local tests; it validates the crop path and returns deterministic
+placeholder content.
+
+The GLM-OCR worker lives in `services/ocr_glm/`. Its container installs CPU
+PyTorch wheels explicitly (`torch==2.9.1+cpu` and `torchvision==0.24.1+cpu`) so
+the CPU deployment does not pull CUDA-sized dependencies. `torchvision` is
+required by the GLM-OCR processor.
+
+The worker maps the orchestrator's route decisions into GLM-OCR prompts:
+
+```text
+text    -> Text Recognition:
+table   -> Table Recognition:
+formula -> Formula Recognition:
+```
+
+The worker normalizes formula responses by removing outer Markdown display
+wrappers such as `$$ ... $$` before returning LaTeX to the orchestrator.
+Assembly owns the final Markdown wrapping.
+
+Real CPU inference is slow compared with the stubs, so Docker Compose configures
+larger service timeouts:
+
+```text
+LAYOUT_TIMEOUT_SECONDS=120
+OCR_TIMEOUT_SECONDS=600
+```
 
 The request and response schemas live in `shared/contracts/ocr.py`. Both the
 orchestrator and OCR service import this contract so the stub can be replaced by
@@ -123,8 +149,9 @@ OCR response direction:
   "content": "| A | B |\\n| --- | --- |\\n| 1 | 2 |",
   "confidence": null,
   "model": {
-    "name": "ocr_stub",
-    "version": "0.1.0"
+    "name": "GLM-OCR",
+    "version": "local",
+    "backend": "ocr_glm"
   },
   "warnings": [],
   "error": null,
@@ -283,4 +310,5 @@ OCR follows the same stub-first strategy:
 2. Implement `ocr_stub` with `GET /health`, `GET /ready`, and `POST /ocr`.
 3. Make the orchestrator call the OCR service for OCR-routed crops.
 4. Persist raw and normalized OCR artifacts.
-5. Replace `ocr_stub` with a GLM-OCR-compatible worker behind the same contract.
+5. Replace Docker Compose OCR traffic with a GLM-OCR-compatible worker behind
+   the same contract.

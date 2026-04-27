@@ -31,6 +31,7 @@ The system currently supports:
 - block routing rules that map layout labels to OCR or future vision workers
 - shared Pydantic schemas for the OCR service request/response contract
 - OCR stub service with `GET /health`, `GET /ready`, and `POST /ocr`
+- GLM-OCR worker service with `GET /health`, `GET /ready`, and `POST /ocr`
 - HTTP OCR service calls for OCR-routed crops
 - raw and normalized OCR artifacts from the HTTP service boundary
 - pending vision manifest for image and chart blocks
@@ -40,13 +41,13 @@ The system currently supports:
   embedded images, bar charts, and line charts
 - job validation reports through `scripts/report_job.py`
 
-Real OCR is not implemented yet. The current OCR backend is a stub that
-validates crop paths and returns deterministic placeholder content. Assembly is
-implemented as a deterministic orchestrator module, so its output is only as
-good as the upstream OCR and future vision/chart workers. A CPU PP-DocLayoutV3
-service is present and preserves native model labels, but its output quality
-still needs manual end-to-end validation on representative PDFs before it is
-treated as stable.
+Docker Compose points OCR requests at the GLM-OCR worker by default. The
+`ocr_stub` service remains available for fast local tests and contract
+development. Assembly is implemented as a deterministic orchestrator module, so
+its output is only as good as the upstream OCR and future vision/chart workers.
+A CPU PP-DocLayoutV3 service is present and preserves native model labels, but
+its output quality still needs manual end-to-end validation on representative
+PDFs before it is treated as stable.
 
 ## Project Structure
 
@@ -70,6 +71,7 @@ sci-ocr/
 |   +-- layout_stub/               # Layout HTTP stub
 |   +-- layout_ppdoclayoutv3_cpu/  # CPU PP-DocLayoutV3 service
 |   +-- ocr_stub/                  # OCR service placeholder
+|   +-- ocr_glm/                   # GLM-OCR worker service
 |   +-- assembly_stub/             # Assembly service placeholder
 +-- shared/
 |   +-- contracts/                 # Shared service boundary schemas
@@ -143,11 +145,77 @@ it uses `http://127.0.0.1:8001`. Docker Compose points it at
 `layout_ppdoclayoutv3_cpu`; switch it back to `layout_stub` for stub-only runs.
 
 The orchestrator reads `OCR_SERVICE_URL` from the environment. If omitted, it
-uses `http://127.0.0.1:8002`. Docker Compose points it at `ocr_stub`.
+uses `http://127.0.0.1:8002`, which is convenient for local `ocr_stub` runs.
+Docker Compose points it at `ocr_glm`. The GLM worker expects the local model
+folder mounted at `/models/ocr/glm-ocr`.
 
 Current real layout inference is CPU-only. A separate GPU layout container will
 be added later, with orchestrator-level service selection through environment
 configuration.
+
+### Docker Compose With Real Layout And OCR
+
+Docker Compose runs the real CPU layout service and the GLM-OCR worker by
+default:
+
+```powershell
+docker compose build ocr_glm orchestrator
+docker compose up -d layout_ppdoclayoutv3_cpu ocr_glm orchestrator
+```
+
+Check service readiness:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8005/ready
+Invoke-RestMethod http://127.0.0.1:8000/health
+```
+
+Run the compact fixture through the full pipeline:
+
+```powershell
+New-Item -ItemType Directory -Force jobs\input | Out-Null
+Copy-Item tests\fixtures\pdfs\formula_table_fixture.pdf jobs\input\formula_table_fixture.pdf -Force
+
+$body = @{
+  input_path = "/app/jobs/input/formula_table_fixture.pdf"
+  dpi = 300
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/run `
+  -Method Post `
+  -ContentType "application/json" `
+  -Body $body
+```
+
+Then inspect the job:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\report_job.py <job_id>
+```
+
+The verified local smoke run produced `ocr: completed` with `source=GLM-OCR`
+and assembled real text, table HTML, and LaTeX formulas into `output/article.md`.
+
+The GLM-OCR image installs CPU PyTorch wheels explicitly:
+
+```text
+torch==2.9.1+cpu
+torchvision==0.24.1+cpu
+```
+
+This avoids pulling CUDA-sized dependencies into the CPU container. The worker
+also requires `torchvision` because the GLM-OCR processor depends on it.
+
+Real CPU inference is much slower than the stubs. Docker Compose sets:
+
+```text
+LAYOUT_TIMEOUT_SECONDS=120
+OCR_TIMEOUT_SECONDS=600
+```
+
+The compact one-page fixture currently takes several minutes on CPU because OCR
+is called once per routed crop.
 
 ## API
 
@@ -292,7 +360,7 @@ Images and charts are recorded as pending for a separate future service.
 
 Detailed routing rules are documented in `docs/BLOCK_ROUTING.md`.
 
-## OCR Stub
+## OCR Backends
 
 The OCR boundary is implemented through `shared/contracts/ocr.py`.
 
@@ -305,9 +373,18 @@ POST /ocr
 ```
 
 It accepts one cropped block image at a time. Text and table requests ask for
-Markdown output. Formula requests ask for LaTeX output. The stub does not run
-real OCR; it validates the crop path and returns deterministic placeholder
-content so the orchestrator can exercise the full service boundary.
+Markdown output. Formula requests ask for LaTeX output. The stub validates the
+crop path and returns deterministic placeholder content so tests can exercise
+the full service boundary quickly.
+
+Docker Compose uses `services/ocr_glm`, which implements the same contract with
+the local GLM-OCR model. It maps route tasks to the model prompts:
+
+```text
+text    -> Text Recognition:
+table   -> Table Recognition:
+formula -> Formula Recognition:
+```
 
 ## Assembly
 
@@ -333,8 +410,11 @@ Detailed assembly design and validation notes are documented in
 
 - PP-DocLayoutV3 is wired as a CPU-only layout service and preserves native
   labels, but still needs quality validation on representative documents.
-- Real OCR is not implemented yet; `ocr_stub` is a contract-compatible
-  placeholder for a future GLM-OCR worker.
+- GLM-OCR is wired as the Docker Compose OCR backend, while `ocr_stub` remains
+  available for fast local contract tests.
+- Real GLM-OCR CPU inference is slow because OCR-routed crops are processed
+  sequentially; batching, parallelism, and/or GPU execution are future
+  performance work.
 - Assembly currently uses deterministic rules and placeholder OCR/vision
   content; it does not repair multi-column reading order or merge broken
   paragraphs beyond the order exposed by layout.
