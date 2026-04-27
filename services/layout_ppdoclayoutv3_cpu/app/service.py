@@ -183,6 +183,16 @@ def clamp_bbox_to_image(
     return [left, top, right, bottom]
 
 
+def normalize_box_order(value: Any, fallback: int) -> int:
+    if value is None:
+        return fallback
+
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Unsupported PP-DocLayoutV3 order value: {value!r}") from exc
+
+
 def run_model(image_path: str, image_width: int, image_height: int) -> tuple[list[dict], list[str]]:
     model = load_model()
     try:
@@ -228,7 +238,7 @@ def run_model(image_path: str, image_width: int, image_height: int) -> tuple[lis
                 "layout_label": label,
                 "bbox": bbox,
                 "confidence": float(score),
-                "order": int(box.get("order", index)),
+                "order": normalize_box_order(box.get("order"), fallback=index),
             }
         )
 

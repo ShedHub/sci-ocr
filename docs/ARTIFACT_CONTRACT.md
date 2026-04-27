@@ -723,6 +723,34 @@ Example:
 }
 ```
 
+## Job Validation Report
+
+The repository includes a local reporting script for manually validating a job
+after it has run through the pipeline:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\report_job.py <job_id>
+```
+
+The script reads only persisted artifacts from `jobs/output/<job_id>/`; it does
+not call services or mutate the job folder.
+
+It summarizes:
+
+- stage status and counts from `meta.json`
+- normalized layout blocks by page
+- canonical block type counts
+- native `layout_label` counts
+- routing targets, recognition tasks, and requested formats from
+  `debug/layout_assets.json`
+- normalized OCR block counts and output formats
+- pending vision blocks from `debug/vision_pending_manifest.json`
+- paths to rendered pages, layout overlays, crops, and debug artifacts
+
+This report is intended for PP-DocLayoutV3 quality validation on representative
+PDFs and for checking that the artifact contract is still coherent after
+backend changes.
+
 ## Backend Replacement Rule
 
 The system must support this replacement:

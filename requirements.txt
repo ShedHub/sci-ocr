@@ -16,3 +16,4 @@ pytest==9.0.3
 httpx==0.28.1
 huggingface_hub==1.12.0
 Pillow==11.0.0
+matplotlib==3.10.9

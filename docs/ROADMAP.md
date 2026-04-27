@@ -20,6 +20,8 @@
 - Add pending vision manifest for image/chart crops
 - Add PP-DocLayoutV3 label mapping validation
 - Preserve native PP-DocLayoutV3 labels in normalized layout artifacts
+- Add representative PDF fixtures for text, tables, formulas, images, and charts
+- Add a job validation report script for layout/OCR/vision split inspection
 
 ## Next
 

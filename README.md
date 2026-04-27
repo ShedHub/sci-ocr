@@ -34,6 +34,9 @@ The system currently supports:
 - HTTP OCR service calls for OCR-routed crops
 - raw and normalized OCR artifacts from the HTTP service boundary
 - pending vision manifest for image and chart blocks
+- representative test PDF fixture generation for text, tables, formulas,
+  embedded images, bar charts, and line charts
+- job validation reports through `scripts/report_job.py`
 
 Real OCR and assembly are not implemented yet. The current OCR backend is a
 stub that validates crop paths and returns deterministic placeholder content. A
@@ -74,6 +77,29 @@ sci-ocr/
 +-- docker-compose.yml
 +-- README.md
 ```
+
+## Test Fixtures
+
+Representative PDFs can be regenerated with:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\generate_test_pdfs.py
+```
+
+This writes:
+
+```text
+tests/fixtures/pdfs/formula_table_fixture.pdf
+tests/fixtures/pdfs/science_mixed_content.pdf
+```
+
+`formula_table_fixture.pdf` is a compact one-page smoke document with prose,
+a table, and rendered math formulas.
+
+`science_mixed_content.pdf` is a two-page validation document with headings,
+prose, a table, rendered formulas, an embedded image, a bar chart, and a
+classic line graph. It is intended for validating PP-DocLayoutV3 labels, crop
+generation, OCR routing, and future vision routing.
 
 ## How To Run
 
@@ -184,6 +210,33 @@ jobs/output/<job_id>/
 +-- trace.json
 +-- logs.jsonl
 ```
+
+## Job Report
+
+After running a job, print a compact validation report with:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\report_job.py <job_id>
+```
+
+You may also pass a full job folder path:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\report_job.py jobs\output\job-20260427-122837-9a453e
+```
+
+The report includes:
+
+- stage statuses from `meta.json`
+- per-page normalized layout blocks
+- canonical type and native `layout_label` summaries
+- crop routing split between OCR and future vision
+- OCR task and output format summaries
+- pending vision block summaries
+- paths to rendered pages, overlays, crops, and debug artifacts
+
+This is the preferred first check after running representative PDFs through
+Docker Compose.
 
 ## What The System Does Now
 
