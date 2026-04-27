@@ -260,8 +260,9 @@ Status values:
 The response shape is validated by shared Pydantic schemas in
 `shared/contracts/layout.py`. A real PP-DocLayoutV3 backend should adapt its
 native labels into the canonical block types before returning this service
-response. Backend-specific details belong in model metadata or raw debug
-artifacts, not in new top-level response fields.
+response, while preserving the original native label in each block's optional
+`layout_label` field. Backend-specific details belong in model metadata or raw
+debug artifacts, not in new top-level response fields.
 
 ## Layout Artifacts
 
@@ -308,6 +309,7 @@ Example:
     {
       "block_id": "p1_b1",
       "type": "text",
+      "layout_label": "content",
       "bbox": [100, 100, 700, 180],
       "confidence": 0.98,
       "order": 1,
@@ -333,6 +335,7 @@ Block rules:
 
 - `block_id` is unique within the document.
 - `type` is one of the supported normalized block types.
+- `layout_label` preserves the backend's native label when available.
 - `bbox` is `[x1, y1, x2, y2]`.
 - `confidence` is a float.
 - `order` is an integer reading/order hint.
@@ -453,9 +456,10 @@ Field rules:
 
 ### Native PP-DocLayoutV3 Routing
 
-PP-DocLayoutV3 supports more detailed native labels than the current normalized
-layout contract. The routing module can route the native labels directly when
-they are available.
+PP-DocLayoutV3 supports more detailed native labels than the canonical
+`type` field. The normalized layout contract preserves these labels in
+`layout_label`, and the routing module routes them directly when they are
+available.
 
 Text-like labels route to OCR with Markdown output:
 
@@ -502,8 +506,8 @@ header_image
 image
 ```
 
-Until the normalized layout artifact preserves native labels, downstream routing
-can fall back to the canonical `type` field.
+If a layout backend does not provide `layout_label`, downstream routing falls
+back to the canonical `type` field.
 
 ### OCR And Vision Split
 
@@ -747,6 +751,8 @@ Included now:
 - layout visual overlays
 - crop generation for every layout block
 - CPU PP-DocLayoutV3 service scaffold behind the shared layout contract
+- PP-DocLayoutV3 label mapping validation and native `layout_label`
+  preservation
 - block routing rules for OCR and future vision services
 - OCR service contract and OCR stub
 - orchestrator OCR stage for OCR-routed crops
@@ -754,7 +760,7 @@ Included now:
 
 Not included yet:
 
-- stabilized PP-DocLayoutV3 runtime and quality validation
+- PP-DocLayoutV3 output quality validation on representative documents
 - real OCR backend
 - vision service
 - assembly

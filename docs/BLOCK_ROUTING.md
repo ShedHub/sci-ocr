@@ -126,10 +126,10 @@ vertical_text
 vision_footnote
 ```
 
-The routing module can route these native labels directly. This is the preferred
-future path because native labels preserve more detail than the current
-canonical layout types. For example, `figure_title` and `text` are both
-text-like, but they have different assembly roles.
+The routing module routes these native labels directly when `layout_label` is
+available. Native labels preserve more detail than canonical layout types. For
+example, `figure_title` and `text` are both text-like, but they have different
+assembly roles.
 
 ## Native Label Routing Table
 
@@ -180,7 +180,7 @@ Image-like blocks routed to the future vision service:
 
 ## Canonical Type Fallback
 
-The current normalized layout artifact only stores canonical block types:
+The normalized layout artifact stores canonical block types:
 
 ```text
 title
@@ -190,8 +190,8 @@ formula
 figure
 ```
 
-Until native labels are preserved in normalized layout blocks, the routing module
-also supports fallback routing for these canonical types:
+When a backend does not provide `layout_label`, the routing module falls back to
+these canonical types:
 
 | Canonical type | Target | Task | Format | Content role |
 | --- | --- | --- | --- | --- |
@@ -201,8 +201,8 @@ also supports fallback routing for these canonical types:
 | `formula` | `ocr` | `formula` | `latex` | `formula` |
 | `figure` | `vision` | `image` | `none` | `image` |
 
-This fallback keeps the current pipeline compatible while we evolve the layout
-contract to preserve native labels.
+This fallback keeps the current pipeline compatible with layout backends that
+only provide canonical block types.
 
 ## Why Images And Charts Are Not Sent To OCR
 
@@ -289,9 +289,8 @@ differently.
 
 ## Current Limitations
 
-- The current layout service normalizes PP-DocLayoutV3 labels into a smaller
-  canonical set, so downstream stages may lose native label detail until the
-  normalized layout artifact is extended.
+- PP-DocLayoutV3 output quality still needs validation on representative
+  documents before the CPU service is treated as stable.
 - The OCR stage currently calls `ocr_stub`; real GLM-OCR is not integrated yet.
 - The vision service is not implemented yet. Image and chart crops are recorded
   as pending.

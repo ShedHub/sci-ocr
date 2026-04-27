@@ -18,11 +18,12 @@
 - Integrate block routing into the orchestrator pipeline
 - Add orchestrator OCR stage for OCR-routed crops
 - Add pending vision manifest for image/chart crops
+- Add PP-DocLayoutV3 label mapping validation
+- Preserve native PP-DocLayoutV3 labels in normalized layout artifacts
 
 ## Next
 
-- Stabilize CPU PP-DocLayoutV3 inference quality and label mapping
-- Preserve native PP-DocLayoutV3 labels in normalized layout artifacts
+- Validate CPU PP-DocLayoutV3 output quality on representative PDFs
 - Replace `ocr_stub` with a GLM-OCR-compatible worker
 - Add assembly stage for Markdown output
 - Add a future vision service for image and chart blocks

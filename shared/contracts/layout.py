@@ -56,6 +56,7 @@ class LayoutBlock(BaseModel):
 
     block_id: str = Field(min_length=1)
     type: LayoutBlockType
+    layout_label: str | None = None
     bbox: tuple[float, float, float, float]
     confidence: float = Field(ge=0.0, le=1.0)
     order: int = Field(ge=1)

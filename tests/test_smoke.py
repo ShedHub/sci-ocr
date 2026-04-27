@@ -52,6 +52,7 @@ def test_start_job_creates_layout_artifacts(tmp_path, monkeypatch) -> None:
                 {
                     "block_id": f"p{request['page_number']}_b1",
                     "type": "text",
+                    "layout_label": "content",
                     "bbox": [100, 100, 700, 180],
                     "confidence": 0.98,
                     "order": 1,
@@ -59,6 +60,7 @@ def test_start_job_creates_layout_artifacts(tmp_path, monkeypatch) -> None:
                 {
                     "block_id": f"p{request['page_number']}_b2",
                     "type": "table",
+                    "layout_label": "table",
                     "bbox": [100, 220, 900, 500],
                     "confidence": 0.95,
                     "order": 2,
@@ -66,6 +68,7 @@ def test_start_job_creates_layout_artifacts(tmp_path, monkeypatch) -> None:
                 {
                     "block_id": f"p{request['page_number']}_b3",
                     "type": "formula",
+                    "layout_label": "display_formula",
                     "bbox": [100, 540, 700, 620],
                     "confidence": 0.93,
                     "order": 3,
@@ -73,6 +76,7 @@ def test_start_job_creates_layout_artifacts(tmp_path, monkeypatch) -> None:
                 {
                     "block_id": f"p{request['page_number']}_b4",
                     "type": "figure",
+                    "layout_label": "chart",
                     "bbox": [100, 660, 900, 900],
                     "confidence": 0.91,
                     "order": 4,
@@ -170,10 +174,12 @@ def test_start_job_creates_layout_artifacts(tmp_path, monkeypatch) -> None:
     assert preparing["pages"][0]["format"] == "png"
     assert normalized["source"] == "layout_stub"
     assert normalized["blocks"][0]["type"] == "text"
+    assert normalized["blocks"][0]["layout_label"] == "content"
     assert len(layout_assets["pages"][0]["crops"]) == 4
     assert layout_assets["pages"][0]["crops"][1]["routing"]["recognition_task"] == "table"
     assert layout_assets["pages"][0]["crops"][2]["routing"]["requested_format"] == "latex"
     assert layout_assets["pages"][0]["crops"][3]["routing"]["target_service"] == "vision"
+    assert layout_assets["pages"][0]["crops"][3]["routing"]["recognition_task"] == "chart"
     assert len(ocr_normalized["blocks"]) == 3
     assert ocr_normalized["blocks"][0]["format"] == "markdown"
     assert ocr_normalized["blocks"][1]["recognition_task"] == "table"

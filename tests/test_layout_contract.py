@@ -23,6 +23,7 @@ def valid_layout_response() -> dict:
             {
                 "block_id": "p1_b1",
                 "type": "text",
+                "layout_label": "content",
                 "bbox": [100, 100, 700, 180],
                 "confidence": 0.98,
                 "order": 1,
@@ -51,6 +52,7 @@ def test_layout_response_accepts_contract_shape() -> None:
 
     assert response.status == "completed"
     assert response.blocks[0].type == "text"
+    assert response.blocks[0].layout_label == "content"
 
 
 def test_layout_response_rejects_unknown_block_type() -> None:

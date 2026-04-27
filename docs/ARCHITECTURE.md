@@ -153,7 +153,9 @@ orchestrator and layout service import this contract so backend replacement does
 not change the HTTP boundary.
 
 The PP-DocLayoutV3 service keeps backend-specific label mapping in its own
-adapter module. Only canonical layout block types leave the service boundary.
+adapter module. Canonical layout block types leave the service boundary in
+`type`, while the native model label is preserved in `layout_label` when
+available.
 
 The current PP-DocLayoutV3 runtime target is CPU-only and lives in
 `services/layout_ppdoclayoutv3_cpu/`. A future GPU runtime should be added as a

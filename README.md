@@ -27,6 +27,7 @@ The system currently supports:
 - raw and normalized layout artifacts from the HTTP service boundary
 - layout visual overlays in `assets/layout/page_XXXX_layout.png`
 - block crops for every layout block in `assets/crops/page_XXXX/`
+- native PP-DocLayoutV3 labels preserved as `layout_label` when available
 - block routing rules that map layout labels to OCR or future vision workers
 - shared Pydantic schemas for the OCR service request/response contract
 - OCR stub service with `GET /health`, `GET /ready`, and `POST /ocr`
@@ -36,8 +37,9 @@ The system currently supports:
 
 Real OCR and assembly are not implemented yet. The current OCR backend is a
 stub that validates crop paths and returns deterministic placeholder content. A
-CPU PP-DocLayoutV3 service is present, but its runtime behavior and label
-quality still need manual end-to-end validation before it is treated as stable.
+CPU PP-DocLayoutV3 service is present and preserves native model labels, but
+its output quality still needs manual end-to-end validation on representative
+PDFs before it is treated as stable.
 
 ## Project Structure
 
@@ -244,8 +246,8 @@ content so the orchestrator can exercise the full service boundary.
 
 ## Current Limitations
 
-- PP-DocLayoutV3 is wired as a CPU-only layout service, but still needs
-  end-to-end runtime and quality validation.
+- PP-DocLayoutV3 is wired as a CPU-only layout service and preserves native
+  labels, but still needs quality validation on representative documents.
 - Real OCR is not implemented yet; `ocr_stub` is a contract-compatible
   placeholder for a future GLM-OCR worker.
 - Assembly is not implemented yet.
