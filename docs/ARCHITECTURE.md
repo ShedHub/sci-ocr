@@ -32,6 +32,7 @@ The orchestrator owns high-level pipeline flow:
 - route layout blocks to the next worker service
 - call the OCR service for OCR-routed crops
 - write a pending vision manifest for image and chart crops
+- assemble normalized artifacts into a content stream and Markdown output
 
 The orchestrator must not contain model-specific inference logic.
 
@@ -236,6 +237,33 @@ Future vision service owns:
 
 - processing image, figure, and chart block crops
 - returning visual descriptions, chart extraction, or Markdown placeholders
+
+## Assembly Stage
+
+Assembly is currently an orchestrator module, not a separate worker. It is
+deterministic and model-free: it reads normalized layout artifacts, normalized
+OCR artifacts, and pending or future vision artifacts, then builds a linear
+article content stream.
+
+The content stream is written to:
+
+```text
+debug/content_stream.json
+```
+
+The LLM-ready Markdown article is written to:
+
+```text
+output/article.md
+```
+
+Ordering is based on `page_number`, layout `order`, and bbox fallback
+coordinates. This keeps headings, paragraphs, tables, formulas, captions, and
+future image/chart descriptions in the same approximate reading sequence as the
+source article. If vision results are not available yet, assembly inserts
+pending placeholders for image and chart blocks.
+
+The detailed assembly contract is documented in `docs/ASSEMBLY.md`.
 
 ## Stub-First Path
 

@@ -75,6 +75,7 @@ def create_job_dirs(job_dir: Path) -> dict[str, Path]:
         "crops_dir": job_dir / "assets" / "crops",
         "layout_dir": job_dir / "assets" / "layout",
         "debug_dir": job_dir / "debug",
+        "output_dir": job_dir / "output",
     }
 
     # Create root folder first

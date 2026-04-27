@@ -12,6 +12,7 @@ This module is responsible only for high-level orchestration:
 - call the external layout service
 - create layout assets and routed crops
 - call the external OCR service for OCR-routed crops
+- assemble normalized artifacts into LLM-ready Markdown
 - return job_id
 
 IMPORTANT:
@@ -34,6 +35,7 @@ from orchestrator.app.job_workspace import (
     generate_job_id,
     validate_input_file,
 )
+from orchestrator.app.assembly_stage import run_assembly_stage
 from orchestrator.app.layout_assets_stage import run_layout_assets_stage
 from orchestrator.app.layout_stage import run_layout_stage
 from orchestrator.app.ocr_stage import run_ocr_stage
@@ -54,7 +56,8 @@ def start_job(input_path: str, dpi: int = 300) -> str:
     7. Run layout service stage
     8. Create layout-derived crops and overlays
     9. Run OCR service stage for OCR-routed crops
-    10. Return job_id
+    10. Assemble normalized artifacts into Markdown
+    11. Return job_id
     """
     # ---- 1. Validate input ----
     src = validate_input_file(input_path)
@@ -146,7 +149,14 @@ def start_job(input_path: str, dpi: int = 300) -> str:
     write_json(job_dir / "meta.json", meta)
     write_json(job_dir / "trace.json", trace)
 
-    # ---- Future pipeline stages placeholders ----
-    # TODO: assembly stage
+    # ---- 10. Assemble Markdown article for LLM consumption ----
+    run_assembly_stage(
+        job_id=job_id,
+        paths=paths,
+        meta=meta,
+        trace=trace,
+    )
+    write_json(job_dir / "meta.json", meta)
+    write_json(job_dir / "trace.json", trace)
 
     return job_id

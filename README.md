@@ -34,15 +34,19 @@ The system currently supports:
 - HTTP OCR service calls for OCR-routed crops
 - raw and normalized OCR artifacts from the HTTP service boundary
 - pending vision manifest for image and chart blocks
+- deterministic assembly stage that builds `content_stream.json` and
+  `output/article.md` for LLM consumption
 - representative test PDF fixture generation for text, tables, formulas,
   embedded images, bar charts, and line charts
 - job validation reports through `scripts/report_job.py`
 
-Real OCR and assembly are not implemented yet. The current OCR backend is a
-stub that validates crop paths and returns deterministic placeholder content. A
-CPU PP-DocLayoutV3 service is present and preserves native model labels, but
-its output quality still needs manual end-to-end validation on representative
-PDFs before it is treated as stable.
+Real OCR is not implemented yet. The current OCR backend is a stub that
+validates crop paths and returns deterministic placeholder content. Assembly is
+implemented as a deterministic orchestrator module, so its output is only as
+good as the upstream OCR and future vision/chart workers. A CPU PP-DocLayoutV3
+service is present and preserves native model labels, but its output quality
+still needs manual end-to-end validation on representative PDFs before it is
+treated as stable.
 
 ## Project Structure
 
@@ -56,6 +60,7 @@ sci-ocr/
 |       +-- layout_stage.py         # Local service-shaped layout stub stage
 |       +-- block_routing.py        # Layout block routing rules
 |       +-- ocr_stage.py            # OCR HTTP stage and vision pending manifest
+|       +-- assembly_stage.py       # Content stream and Markdown assembly
 |       +-- schemas.py              # API request/response models
 |       +-- config.py               # Path configuration
 +-- jobs/
@@ -206,6 +211,10 @@ jobs/output/<job_id>/
 |   +-- ocr_raw_page_0001.json
 |   +-- ocr_normalized_page_0001.json
 |   +-- vision_pending_manifest.json
+|   +-- content_stream.json
+|   +-- assembly_manifest.json
++-- output/
+|   +-- article.md
 +-- meta.json
 +-- trace.json
 +-- logs.jsonl
@@ -233,7 +242,8 @@ The report includes:
 - crop routing split between OCR and future vision
 - OCR task and output format summaries
 - pending vision block summaries
-- paths to rendered pages, overlays, crops, and debug artifacts
+- assembly source/status summaries
+- paths to rendered pages, overlays, crops, debug artifacts, and Markdown output
 
 This is the preferred first check after running representative PDFs through
 Docker Compose.
@@ -257,6 +267,8 @@ API request
 -> call HTTP OCR service for text/table/formula crops
 -> write raw and normalized OCR artifacts
 -> write pending vision manifest for image/chart crops
+-> assemble article reading order into debug/content_stream.json
+-> render output/article.md for downstream LLM analysis
 -> update meta.json, trace.json, and logs.jsonl
 -> return job_id
 ```
@@ -297,13 +309,35 @@ Markdown output. Formula requests ask for LaTeX output. The stub does not run
 real OCR; it validates the crop path and returns deterministic placeholder
 content so the orchestrator can exercise the full service boundary.
 
+## Assembly
+
+The assembly stage lives in `orchestrator/app/assembly_stage.py`.
+
+It reads normalized layout, normalized OCR, and pending vision artifacts, then
+builds a linear `debug/content_stream.json` sorted by:
+
+```text
+page_number -> order -> bbox top -> bbox left -> block_id
+```
+
+The content stream is the machine-readable representation of the reconstructed
+article. `output/article.md` is rendered from that stream for LLM analysis.
+Text and tables are inserted as Markdown, formulas are inserted as LaTeX, and
+image/chart blocks are represented as pending placeholders until a vision
+service provides descriptions and chart data.
+
+Detailed assembly design and validation notes are documented in
+`docs/ASSEMBLY.md`.
+
 ## Current Limitations
 
 - PP-DocLayoutV3 is wired as a CPU-only layout service and preserves native
   labels, but still needs quality validation on representative documents.
 - Real OCR is not implemented yet; `ocr_stub` is a contract-compatible
   placeholder for a future GLM-OCR worker.
-- Assembly is not implemented yet.
+- Assembly currently uses deterministic rules and placeholder OCR/vision
+  content; it does not repair multi-column reading order or merge broken
+  paragraphs beyond the order exposed by layout.
 - The vision service for images and charts is not implemented yet; routed
   image/chart crops are written to `vision_pending_manifest.json`.
 - A separate GPU layout container and orchestrator backend switch are planned

@@ -25,7 +25,8 @@ def test_report_job_prints_stage_layout_routing_and_vision_summary(tmp_path) -> 
           "stages": [
             {"name": "layout", "status": "completed", "pages": 1, "blocks": 2, "source": "fixture_layout"},
             {"name": "vision", "status": "pending", "blocks": 1},
-            {"name": "ocr", "status": "completed", "blocks": 1, "vision_pending_blocks": 1, "source": "ocr_stub"}
+            {"name": "ocr", "status": "completed", "blocks": 1, "vision_pending_blocks": 1, "source": "ocr_stub"},
+            {"name": "assembly", "status": "completed", "blocks": 2}
           ]
         }
         """,
@@ -97,6 +98,23 @@ def test_report_job_prints_stage_layout_routing_and_vision_summary(tmp_path) -> 
         }
         """,
     )
+    write_json(
+        debug_dir / "assembly_manifest.json",
+        """
+        {
+          "stage": "assembly",
+          "status": "completed",
+          "job_id": "job-test",
+          "blocks": 2,
+          "sources": {"ocr_stub": 1, "vision_pending": 1},
+          "statuses": {"completed": 1, "pending": 1},
+          "artifacts": {
+            "markdown": "article.md",
+            "content_stream": "content_stream.json"
+          }
+        }
+        """,
+    )
 
     result = subprocess.run(
         [
@@ -116,3 +134,5 @@ def test_report_job_prints_stage_layout_routing_and_vision_summary(tmp_path) -> 
     assert "type summary: figure=1, text=1" in result.stdout
     assert "targets: ocr=1, vision=1" in result.stdout
     assert "pending blocks: 1" in result.stdout
+    assert "Assembly:" in result.stdout
+    assert "sources: ocr_stub=1, vision_pending=1" in result.stdout

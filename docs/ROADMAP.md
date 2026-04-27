@@ -22,11 +22,13 @@
 - Preserve native PP-DocLayoutV3 labels in normalized layout artifacts
 - Add representative PDF fixtures for text, tables, formulas, images, and charts
 - Add a job validation report script for layout/OCR/vision split inspection
+- Add deterministic orchestrator assembly stage for content stream and Markdown output
 
 ## Next
 
 - Validate CPU PP-DocLayoutV3 output quality on representative PDFs
 - Replace `ocr_stub` with a GLM-OCR-compatible worker
-- Add assembly stage for Markdown output
 - Add a future vision service for image and chart blocks
+- Improve assembly for multi-column reading order, paragraph merging, and
+  figure/chart caption association
 - Add a separate GPU PP-DocLayoutV3 container and orchestrator backend switch

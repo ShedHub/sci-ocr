@@ -133,6 +133,9 @@ def test_start_job_creates_layout_artifacts(tmp_path, monkeypatch) -> None:
     assert (job_dir / "debug" / "ocr_raw_page_0001.json").is_file()
     assert (job_dir / "debug" / "ocr_normalized_page_0001.json").is_file()
     assert (job_dir / "debug" / "vision_pending_manifest.json").is_file()
+    assert (job_dir / "debug" / "content_stream.json").is_file()
+    assert (job_dir / "debug" / "assembly_manifest.json").is_file()
+    assert (job_dir / "output" / "article.md").is_file()
 
     meta = json.loads((job_dir / "meta.json").read_text(encoding="utf-8"))
     preparing = json.loads(
@@ -159,7 +162,7 @@ def test_start_job_creates_layout_artifacts(tmp_path, monkeypatch) -> None:
         )
     )
 
-    assert meta["status"] == "ocr_completed"
+    assert meta["status"] == "assembly_completed"
     assert meta["stages"][0]["name"] == "preparing_for_layout"
     assert meta["stages"][0]["dpi"] == 400
     assert meta["stages"][1]["name"] == "layout"
@@ -170,6 +173,8 @@ def test_start_job_creates_layout_artifacts(tmp_path, monkeypatch) -> None:
     assert meta["stages"][4]["name"] == "ocr"
     assert meta["stages"][4]["blocks"] == 3
     assert meta["stages"][4]["vision_pending_blocks"] == 1
+    assert meta["stages"][5]["name"] == "assembly"
+    assert meta["stages"][5]["blocks"] == 4
     assert preparing["dpi"] == 400
     assert preparing["pages"][0]["format"] == "png"
     assert normalized["source"] == "layout_stub"
@@ -186,6 +191,12 @@ def test_start_job_creates_layout_artifacts(tmp_path, monkeypatch) -> None:
     assert ocr_normalized["blocks"][2]["format"] == "latex"
     assert vision_pending["status"] == "pending"
     assert vision_pending["block_count"] == 1
+
+    article = (job_dir / "output" / "article.md").read_text(encoding="utf-8")
+    assert "text:p1_b1" in article
+    assert "| A | B |" not in article
+    assert "$$\nformula:p1_b3\n$$" in article
+    assert "[Chart pending: p1_b4]" in article
 
 
 def test_layout_failure_is_persisted(tmp_path, monkeypatch) -> None:

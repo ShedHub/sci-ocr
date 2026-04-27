@@ -166,12 +166,29 @@ def print_vision_summary(job_dir: Path) -> None:
     print(f"  manifest: {manifest_path}")
 
 
+def print_assembly_summary(job_dir: Path) -> None:
+    manifest_path = job_dir / "debug" / "assembly_manifest.json"
+    print("Assembly:")
+    if not manifest_path.is_file():
+        print("  assembly_manifest.json not found")
+        return
+
+    manifest = read_json(manifest_path)
+    print(f"  status: {manifest.get('status')}")
+    print(f"  blocks: {manifest.get('blocks', 0)}")
+    print(f"  sources: {format_counter(Counter(manifest.get('sources', {})))}")
+    print(f"  statuses: {format_counter(Counter(manifest.get('statuses', {})))}")
+    print(f"  markdown: {manifest.get('artifacts', {}).get('markdown', job_dir / 'output' / 'article.md')}")
+    print(f"  content stream: {manifest.get('artifacts', {}).get('content_stream', job_dir / 'debug' / 'content_stream.json')}")
+
+
 def print_artifact_paths(job_dir: Path) -> None:
     print("Artifacts:")
     print(f"  pages: {job_dir / 'assets' / 'pages'}")
     print(f"  overlays: {job_dir / 'assets' / 'layout'}")
     print(f"  crops: {job_dir / 'assets' / 'crops'}")
     print(f"  debug: {job_dir / 'debug'}")
+    print(f"  output: {job_dir / 'output'}")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -212,6 +229,8 @@ def main() -> int:
     print_ocr_summary(ocr_artifacts)
     print()
     print_vision_summary(job_dir)
+    print()
+    print_assembly_summary(job_dir)
     print()
     print_artifact_paths(job_dir)
     return 0

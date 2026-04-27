@@ -18,6 +18,7 @@ Current implemented scope:
 - Service-ready layout contract in stub-first form
 - Deterministic block routing rules for OCR and future vision stages
 - Service-ready OCR contract in stub-first form
+- Deterministic assembly into a content stream and Markdown output
 
 The core rule is that stage boundaries must stay stable. A backend such as
 `layout_stub` must be replaceable with `PP-DocLayoutV3` without changing
@@ -35,6 +36,7 @@ jobs/output/<job_id>/
 │  ├─ pages/
 │  └─ layout/
 ├─ debug/
+├─ output/
 ├─ meta.json
 ├─ trace.json
 └─ logs.jsonl
@@ -49,6 +51,7 @@ Folder meaning:
   orchestrator.
 - `assets/layout/` stores future layout overlays and visualizations.
 - `debug/` stores machine-readable intermediate outputs.
+- `output/` stores final user-facing artifacts such as `article.md`.
 - `meta.json` stores job summary and stage statuses.
 - `trace.json` stores an ordered timeline of pipeline events.
 - `logs.jsonl` stores append-only structured logs.
@@ -723,6 +726,43 @@ Example:
 }
 ```
 
+## Assembly Artifacts
+
+Assembly consumes normalized artifacts and produces the final text form of the
+article for downstream LLM analysis.
+
+The machine-readable ordered stream is:
+
+```text
+debug/content_stream.json
+```
+
+Each stream entry preserves page, order, bbox, block id, role, kind, source,
+status, and content. The stream is sorted by:
+
+```text
+page_number -> order -> bbox top -> bbox left -> block_id
+```
+
+The rendered Markdown article is:
+
+```text
+output/article.md
+```
+
+The stage manifest is:
+
+```text
+debug/assembly_manifest.json
+```
+
+Assembly renders text and tables as Markdown, formulas as LaTeX blocks or
+inline LaTeX depending on role, captions as italic text, and pending image/chart
+blocks as placeholders until the future vision service supplies descriptions
+and extracted chart data.
+
+Detailed assembly behavior is documented in `docs/ASSEMBLY.md`.
+
 ## Job Validation Report
 
 The repository includes a local reporting script for manually validating a job
@@ -745,7 +785,9 @@ It summarizes:
   `debug/layout_assets.json`
 - normalized OCR block counts and output formats
 - pending vision blocks from `debug/vision_pending_manifest.json`
-- paths to rendered pages, layout overlays, crops, and debug artifacts
+- assembly source and status summaries from `debug/assembly_manifest.json`
+- paths to rendered pages, layout overlays, crops, debug artifacts, and
+  Markdown output
 
 This report is intended for PP-DocLayoutV3 quality validation on representative
 PDFs and for checking that the artifact contract is still coherent after
@@ -785,10 +827,11 @@ Included now:
 - OCR service contract and OCR stub
 - orchestrator OCR stage for OCR-routed crops
 - pending vision manifest for image/chart crops
+- deterministic orchestrator assembly stage and Markdown output
 
 Not included yet:
 
 - PP-DocLayoutV3 output quality validation on representative documents
 - real OCR backend
 - vision service
-- assembly
+- real OCR or vision-enriched assembly content
