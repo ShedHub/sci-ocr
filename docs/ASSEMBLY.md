@@ -6,7 +6,7 @@ Assembly reconstructs the article as LLM-ready Markdown.
 
 The input document may be a scanned scientific PDF. Earlier stages detect page
 layout, crop each block, route text/table/formula blocks to OCR, and route
-image/chart blocks to a future vision worker. Assembly turns those normalized
+image/chart blocks to the optional vision worker. Assembly turns those normalized
 stage outputs into one ordered textual article.
 
 Pipeline direction:
@@ -97,8 +97,8 @@ Important fields:
   `text`, `table`, `formula`, `caption`, `chart`, or `footer`.
 - `kind` describes the content family, for example `text`, `table`, `formula`,
   `image`, or `chart`.
-- `source` records where content came from, such as `ocr_stub`,
-  `vision_llama`, `vision_pending`, or a future real OCR/vision worker.
+- `source` records where content came from, such as `ocr_stub`, `GLM-OCR`,
+  `vision_llama`, `vision_pending`, or another compatible OCR/vision worker.
 - `status` is `completed`, `pending`, or `missing`.
 
 ## Ordering

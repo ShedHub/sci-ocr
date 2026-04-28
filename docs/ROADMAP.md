@@ -12,7 +12,7 @@
 - Add layout service failure persistence in `meta.json`, `trace.json`, and `logs.jsonl`
 - Add an optional integration test for the real HTTP layout boundary
 - Add shared Pydantic schemas for the layout service request/response contract
-- Add deterministic block routing rules for OCR and future vision workers
+- Add deterministic block routing rules for OCR and vision workers
 - Expand crop generation beyond `title` and `text` blocks
 - Add an OCR service contract and `ocr_stub` using the routing output
 - Integrate block routing into the orchestrator pipeline
@@ -39,10 +39,15 @@
 - Validate GLM-OCR worker output quality on representative crops
 - Validate `vision_llama` output quality on representative image, chart, and
   diagram crops
+- Add a quality validation harness that checks representative job artifacts for
+  expected layout labels, OCR content, formulas, tables, vision output, and
+  assembly order
 - Improve vision prompts and output normalization for chart data and Mermaid
   diagrams
 - Improve OCR throughput with batching, parallel crop processing, or GPU
   execution
+- Add a future layout worker-pool launcher/orchestrator path for high-core
+  machines. See `docs/LAYOUT_SCALING.md`.
 - Replace or augment the temporary llama-server vision backend with specialized
   image, chart, and diagram processors when quality requirements are clearer
 - Improve assembly for multi-column reading order, paragraph merging, and

@@ -1,35 +1,31 @@
-
 \documentclass[11pt,a4paper]{article}
 
 \usepackage[a4paper,margin=2.2cm]{geometry}
-\usepackage{microtype}
 \usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
 \usepackage{lmodern}
+\usepackage{microtype}
 \usepackage{hyperref}
 \usepackage{titlesec}
 \usepackage{fancyhdr}
 \usepackage{enumitem}
 \usepackage{longtable}
-\usepackage{array}
 \usepackage{booktabs}
 \usepackage{tabularx}
 \usepackage{xcolor}
 \usepackage{listings}
 \usepackage{framed}
-\usepackage{graphicx}
-\usepackage{float}
 \usepackage{parskip}
 
 \hypersetup{
   colorlinks=true,
   linkcolor=blue!50!black,
   urlcolor=blue!50!black,
-  pdftitle={PDF to Markdown Pipeline - Full Project Description},
-  pdfauthor={OpenAI}
+  pdftitle={SCI-OCR PDF Pipeline Specification},
+  pdfauthor={SCI-OCR Project}
 }
 
 \definecolor{Accent}{HTML}{1F4E79}
-\definecolor{Soft}{HTML}{F4F7FA}
 \definecolor{CodeBg}{HTML}{F7F7F7}
 \definecolor{CodeFrame}{HTML}{CCCCCC}
 
@@ -38,9 +34,10 @@
 \titleformat{\subsubsection}{\normalsize\bfseries}{\thesubsubsection}{0.6em}{}
 
 \pagestyle{fancy}
+\setlength{\headheight}{14pt}
 \fancyhf{}
-\lhead{\textit{PDF to Markdown Pipeline}}
-\rhead{\textit{Architecture Specification}}
+\lhead{\textit{SCI-OCR}}
+\rhead{\textit{Pipeline Specification}}
 \cfoot{\thepage}
 
 \lstdefinestyle{custom}{
@@ -63,1147 +60,628 @@
 
 \begin{document}
 
+\pagenumbering{Alph}
 \begin{titlepage}
 \centering
 \vspace*{3cm}
-{\Huge\bfseries PDF to Markdown Pipeline\par}
+{\Huge\bfseries SCI-OCR\par}
 \vspace{0.5cm}
-{\Large Full Project Description, Architecture, Schemes, Tools, and Build Plan\par}
+{\Large PDF to Markdown Pipeline Specification\par}
 \vspace{1.2cm}
-{\large Local-first, Docker-based, artifact-driven document processing platform\par}
+{\large Current architecture, artifact contracts, runtime services, limitations, and roadmap\par}
 \vspace{2cm}
 
-\begin{tabular}{>{\bfseries}p{4.2cm}p{8.6cm}}
-Document type: & Technical architecture specification \\
-Primary goal: & Build a complete product skeleton that can grow from placeholders into a production system \\
+\begin{tabular}{>{\bfseries}p{4.4cm}p{8.4cm}}
+Document type: & Current technical specification \\
+Primary goal: & Convert PDFs into LLM-ready Markdown with structured debug artifacts \\
 Main input: & PDF document \\
-Main outputs: & Markdown, structured JSON, and full intermediate artifacts \\
-Runtime model: & Multiple Docker containers, one service per responsibility \\
-Communication: & FastAPI over internal Docker network for phase 1 \\
-Version target: & Phase-1 / Phase-2 project planning document \\
+Main output: & \texttt{output/article.md} plus normalized JSON artifacts \\
+Runtime model: & FastAPI orchestrator plus replaceable HTTP worker services \\
+Current real backends: & PP-DocLayoutV3 CPU, GLM-OCR CPU, optional llama-server vision adapter \\
+Updated: & \today \\
 \end{tabular}
 
 \vfill
-{\large \today\par}
 \end{titlepage}
 
+\pagenumbering{roman}
 \tableofcontents
 \newpage
+\pagenumbering{arabic}
 
 \section{Executive Summary}
 
-This project is a modular platform that receives a PDF document and produces a Markdown representation together with a structured JSON representation and a full set of intermediate artifacts. The system is intentionally designed as a \textbf{pipeline of Docker containers}, not as one large monolithic application.
+SCI-OCR is a local-first document processing pipeline that receives a PDF and
+produces an ordered Markdown article, together with a complete set of
+intermediate artifacts for inspection and debugging.
 
-The key architectural idea is simple:
-
-\begin{itemize}[leftmargin=1.2cm]
-\item one service receives and coordinates jobs;
-\item one service prepares pages from the PDF;
-\item one service detects layout blocks;
-\item one service routes blocks to specialized workers;
-\item different workers process text, formulas, tables, and images;
-\item one service determines reading order;
-\item one service assembles final Markdown and JSON;
-\item one service validates the final result.
-\end{itemize}
-
-This makes the product easier to build, easier to test, easier to debug, and much easier to extend when different OCR or vision models are introduced later.
-
-\section{What the Product Must Do}
-
-The product must eventually support the following end-to-end behavior:
-
-\begin{enumerate}[leftmargin=1.2cm]
-\item Receive a PDF from a client.
-\item Create a job id and a job folder.
-\item Store the original document and job metadata.
-\item Convert the PDF into page images.
-\item Detect layout blocks on each page.
-\item Route blocks to the correct worker.
-\item Extract content from each block:
-  \begin{itemize}
-  \item text blocks;
-  \item formulas;
-  \item tables;
-  \item figures and image-like regions.
-  \end{itemize}
-\item Reconstruct logical reading order.
-\item Assemble a final Markdown file and structured JSON file.
-\item Validate results and mark the job as completed, degraded, or failed.
-\item Keep all intermediate artifacts so the whole process can be inspected later.
-\end{enumerate}
-
-\section{What the First Version Must Actually Do}
-
-The first version does \textbf{not} need perfect OCR or advanced models. The first version needs a \textbf{correct skeleton}.
-
-That means phase 1 should provide:
-
-\begin{itemize}[leftmargin=1.2cm]
-\item a clean monorepo;
-\item one Dockerfile per service;
-\item a working docker-compose setup;
-\item a hello-world orchestrator;
-\item placeholder services for all major pipeline stages;
-\item stable request/response schemas;
-\item a job folder layout;
-\item a clear Git and model-storage strategy.
-\end{itemize}
-
-The point is to prove the \textbf{architecture}, not model accuracy.
-
-\section{Core Architectural Principles}
-
-\subsection{One Service = One Responsibility}
-
-Each service should do one thing well.
-
-Examples:
-
-\begin{itemize}[leftmargin=1.2cm]
-\item the layout service finds blocks;
-\item the text OCR service reads text regions;
-\item the formula OCR service reads formulas;
-\item the table OCR service reads tables;
-\item the image classifier labels figure-like regions;
-\item the orchestrator coordinates the pipeline.
-\end{itemize}
-
-This prevents the project from collapsing into one huge service with mixed responsibilities.
-
-\subsection{One Service = One Docker Container}
-
-Each service runs inside its own container and therefore has its own:
-
-\begin{itemize}[leftmargin=1.2cm]
-\item Python version;
-\item packages;
-\item system libraries;
-\item CUDA-related dependencies if needed;
-\item file-level runtime environment.
-\end{itemize}
-
-This is crucial because different workers may use different frameworks such as Paddle, PyTorch, custom OCR stacks, or different local LLMs.
-
-\subsection{Stable Contracts Between Services}
-
-Services must communicate using stable schemas. A worker can change its internal model later, but its API contract should stay compatible.
-
-This allows:
-
-\begin{itemize}[leftmargin=1.2cm]
-\item easy model replacement;
-\item cleaner testing;
-\item easier integration of alternatives;
-\item less coupling between services.
-\end{itemize}
-
-\subsection{Artifact-Driven Design}
-
-Every pipeline stage should write artifacts to disk. This means the system never hides all intermediate state inside memory only.
-
-This gives:
-
-\begin{itemize}[leftmargin=1.2cm]
-\item reproducibility;
-\item step-by-step debugging;
-\item partial reruns;
-\item easier quality inspection;
-\item future benchmark datasets;
-\item operational transparency.
-\end{itemize}
-
-\section{High-Level System Scheme}
+The current implemented pipeline is:
 
 \begin{lstlisting}
-Client
-  |
-  v
-Orchestrator
-  |
-  v
-Page Preparation
-  |
-  v
-Layout Master
-  |
-  v
-Block Router
-  |------> Text OCR
-  |------> Formula OCR
-  |------> Table OCR
-  |------> Image Classifier
-                  |
-                  v
-             Image OCR / Figure Worker
-  |
-  v
-Reading Order
-  |
-  v
-Assembly
-  |
-  v
-Validation
-  |
-  v
-document.md + document.json + debug artifacts + logs
+Input PDF
+  -> Page Rendering
+  -> Layout
+  -> Layout Assets and Routing
+  -> OCR + optional Vision
+  -> Assembly
+  -> output/article.md
 \end{lstlisting}
 
-\section{Detailed Description of Each Service}
+The system is no longer only a placeholder scaffold. It has a working FastAPI
+orchestrator, stable Pydantic service contracts, a real CPU PP-DocLayoutV3
+layout service, a real GLM-OCR worker, an optional llama-server-backed vision
+adapter, deterministic assembly, representative PDF fixtures, and a job report
+script.
 
-\subsection{1. Orchestrator}
+\docnote{The core engineering principle remains unchanged: model backends must
+be replaceable without changing downstream artifact contracts.}
 
-\textbf{Role:} central control plane for a job.
+\section{Current Capabilities}
 
-\textbf{Responsibilities:}
-\begin{itemize}[leftmargin=1.2cm]
-\item expose public API for upload and status;
-\item create job ids;
-\item create job directories;
-\item call all services in the right order;
-\item write job metadata and trace files;
-\item collect service outputs;
-\item update stage statuses;
-\item decide final job state.
-\end{itemize}
-
-\textbf{Must not do:}
-\begin{itemize}[leftmargin=1.2cm]
-\item real OCR;
-\item model inference;
-\item table extraction logic;
-\item formula recognition;
-\item figure classification.
-\end{itemize}
-
-\textbf{Reasoning:} the orchestrator should stay focused on pipeline control, not on document intelligence.
-
-\subsection{2. Page Preparation Service}
-
-\textbf{Role:} normalize PDF input into page-level images.
-
-\textbf{Responsibilities:}
-\begin{itemize}[leftmargin=1.2cm]
-\item store original file;
-\item render PDF pages to PNG or another page-image format;
-\item create page numbering;
-\item optionally perform preprocessing:
-  \begin{itemize}
-  \item deskew;
-  \item denoise;
-  \item contrast normalization;
-  \item resizing.
-  \end{itemize}
-\item write per-page metadata.
-\end{itemize}
-
-\textbf{Output examples:}
-\begin{itemize}[leftmargin=1.2cm]
-\item \texttt{assets/pages/page\_0001.png}
-\item \texttt{assets/pages/page\_0002.png}
-\item \texttt{meta.json}
-\end{itemize}
-
-\subsection{3. Layout Master}
-
-\textbf{Role:} detect logical layout blocks on pages.
-
-\textbf{Typical block types:}
-\begin{itemize}[leftmargin=1.2cm]
-\item title;
-\item text;
-\item list;
-\item caption;
-\item table;
-\item formula;
-\item figure / image;
-\item header;
-\item footer;
-\item footnote;
-\item reference.
-\end{itemize}
-
-\textbf{Responsibilities:}
-\begin{itemize}[leftmargin=1.2cm]
-\item run layout detection model;
-\item output block coordinates and types;
-\item save raw model output;
-\item save normalized layout output;
-\item save debug overlays with boxes and labels.
-\end{itemize}
-
-\textbf{Important rule:} layout service says \emph{what exists and where}. It does not read text and does not assemble Markdown.
-
-\subsection{4. Block Router}
-
-\textbf{Role:} crop detected blocks and dispatch them to the correct worker.
-
-\textbf{Responsibilities:}
-\begin{itemize}[leftmargin=1.2cm]
-\item read normalized layout results;
-\item crop each block from its page image;
-\item decide routing target;
-\item call specialized workers;
-\item collect worker outputs and save them.
-\end{itemize}
-
-\textbf{Routing examples:}
-\begin{itemize}[leftmargin=1.2cm]
-\item text-like block $\rightarrow$ text OCR;
-\item formula block $\rightarrow$ formula OCR;
-\item table block $\rightarrow$ table OCR;
-\item image-like block $\rightarrow$ image classifier.
-\end{itemize}
-
-\subsection{5. Text OCR}
-
-\textbf{Role:} process text-like blocks.
-
-\textbf{Typical inputs:}
-\begin{itemize}[leftmargin=1.2cm]
-\item paragraphs;
-\item titles;
-\item captions;
-\item list items;
-\item references;
-\item headers and footers.
-\end{itemize}
-
-\textbf{Typical output fields:}
-\begin{itemize}[leftmargin=1.2cm]
-\item block id;
-\item recognized text;
-\item confidence;
-\item optional formatting hints;
-\item raw model output.
-\end{itemize}
-
-\subsection{6. Formula OCR}
-
-\textbf{Role:} process formula blocks and convert them into a useful format such as LaTeX.
-
-\textbf{Typical output fields:}
-\begin{itemize}[leftmargin=1.2cm]
-\item block id;
-\item formula LaTeX;
-\item confidence;
-\item raw model response.
-\end{itemize}
-
-\textbf{Why separate:} formulas need different recognition logic than plain OCR text.
-
-\subsection{7. Table OCR}
-
-\textbf{Role:} turn table crops into structured table data.
-
-\textbf{Typical output fields:}
-\begin{itemize}[leftmargin=1.2cm]
-\item block id;
-\item rows and columns;
-\item cell coordinates if supported;
-\item table title if detected;
-\item markdown-ready representation;
-\item JSON-ready representation.
-\end{itemize}
-
-\textbf{Why separate:} tables require structure understanding, not only text recognition.
-
-\subsection{8. Image Classifier}
-
-\textbf{Role:} classify image-like blocks before deeper handling.
-
-\textbf{Useful labels:}
-\begin{itemize}[leftmargin=1.2cm]
-\item chart;
-\item diagram;
-\item photo;
-\item illustration;
-\item scanned-text-image;
-\item other.
-\end{itemize}
-
-\textbf{Why this service matters:} different image categories need different downstream treatment.
-
-\subsection{9. Image OCR / Figure Worker}
-
-\textbf{Role:} handle image-like blocks after classification.
-
-\textbf{Possible tasks:}
-\begin{itemize}[leftmargin=1.2cm]
-\item OCR inside figures;
-\item placeholder figure description;
-\item scientific figure understanding later;
-\item chart or diagram forwarding later.
-\end{itemize}
-
-\subsection{10. Reading Order Service}
-
-\textbf{Role:} reconstruct natural human reading order.
-
-\textbf{Why needed:}
-\begin{itemize}[leftmargin=1.2cm]
-\item multi-column layouts;
-\item captions under images;
-\item sidebars;
-\item header/footer suppression;
-\item complex block sequences.
-\end{itemize}
-
-\subsection{11. Assembly Service}
-
-\textbf{Role:} build final document representations.
-
-\textbf{Responsibilities:}
-\begin{itemize}[leftmargin=1.2cm]
-\item merge ordered block outputs;
-\item generate \texttt{document.md};
-\item generate \texttt{document.json};
-\item preserve hierarchy where possible;
-\item serialize formulas and tables correctly.
-\end{itemize}
-
-\subsection{12. Validation Service}
-
-\textbf{Role:} verify the final output is complete and coherent.
-
-\textbf{Responsibilities:}
-\begin{itemize}[leftmargin=1.2cm]
-\item verify all expected artifacts exist;
-\item validate schema structure;
-\item detect suspicious empty blocks;
-\item mark job status as completed, degraded, or failed.
-\end{itemize}
-
-\section{Communication Between Containers}
-
-For phase 1, services should communicate through \textbf{HTTP on the Docker network}. FastAPI is a very good fit because it gives:
+The current repository supports:
 
 \begin{itemize}[leftmargin=1.2cm]
-\item fast development;
-\item clean REST endpoints;
-\item automatic request/response validation;
-\item interactive docs for testing;
-\item simple JSON contracts.
+\item FastAPI orchestrator with \texttt{GET /health} and \texttt{POST /run}.
+\item Input file validation and unique job creation.
+\item Persistent job workspace under \texttt{jobs/output/<job\_id>/}.
+\item \texttt{meta.json}, \texttt{trace.json}, and \texttt{logs.jsonl}.
+\item PDF page rendering to PNG at 300 DPI by default, with optional 400 DPI.
+\item HTTP layout service calls for rendered pages.
+\item Layout stub service for fast contract tests.
+\item CPU PP-DocLayoutV3 service preserving native labels as
+  \texttt{layout\_label}.
+\item Raw and normalized layout artifacts.
+\item Layout overlays and block crops for every detected layout block.
+\item Deterministic routing from layout labels to OCR or vision.
+\item Shared OCR contract and OCR stub.
+\item GLM-OCR worker behind the same OCR contract.
+\item Optional vision contract and \texttt{vision\_llama} adapter.
+\item Pending vision manifest when the vision backend is unavailable.
+\item Deterministic assembly into \texttt{debug/content\_stream.json} and
+  \texttt{output/article.md}.
+\item Representative fixtures for text, tables, formulas, images, bar charts,
+  and line charts.
+\item \texttt{scripts/report\_job.py} for manual validation of persisted job
+  artifacts.
+\item Tests covering contracts, routing, assembly, fixtures, service stubs, and
+  selected integrations.
 \end{itemize}
 
-\subsection{Important Concept}
-
-Containers do not communicate because of FastAPI itself. They communicate because they share a Docker network and use HTTP. FastAPI is simply the web framework that exposes the HTTP endpoints.
-
-\subsection{Internal Addressing}
-
-Inside Docker Compose, services can call each other by service name:
+\section{Repository Structure}
 
 \begin{lstlisting}
-http://orchestrator:8000
-http://layout_master:8000
-http://text_ocr:8000
-http://formula_ocr:8000
-http://table_ocr:8000
-http://image_classifier:8000
+sci-ocr/
++-- orchestrator/
+|   +-- app/
+|       +-- main.py
+|       +-- pipeline.py
+|       +-- preparing_for_layout.py
+|       +-- layout_stage.py
+|       +-- layout_assets_stage.py
+|       +-- block_routing.py
+|       +-- ocr_stage.py
+|       +-- vision_stage.py
+|       +-- assembly_stage.py
+|       +-- schemas.py
+|       +-- config.py
++-- services/
+|   +-- layout_stub/
+|   +-- layout_ppdoclayoutv3_cpu/
+|   +-- ocr_stub/
+|   +-- ocr_glm/
+|   +-- vision_llama/
+|   +-- assembly_stub/
++-- shared/
+|   +-- contracts/
+|       +-- layout.py
+|       +-- ocr.py
+|       +-- vision.py
++-- jobs/
+|   +-- input/
+|   +-- output/
++-- models/
++-- local_tools/
++-- docs/
++-- scripts/
++-- tests/
++-- docker-compose.yml
++-- README.md
 \end{lstlisting}
 
-\subsection{Recommended Minimal Endpoints Per Worker}
+\section{Pipeline Flow}
 
-\begin{lstlisting}
-GET  /health
-GET  /capabilities
-POST /process
-\end{lstlisting}
+\subsection{API Request}
 
-This keeps every service predictable.
-
-\section{Project Repository Structure}
-
-A recommended monorepo layout is:
-
-\begin{lstlisting}
-pdf-md-pipeline/
-├── .gitignore
-├── .dockerignore
-├── .env.example
-├── README.md
-├── LICENSE
-├── docker-compose.yml
-├── docs/
-│   ├── ARCHITECTURE.md
-│   ├── ARTIFACT_CONTRACT.md
-│   ├── API_CONTRACTS.md
-│   ├── DEVELOPMENT.md
-│   └── DEPLOYMENT.md
-├── configs/
-│   ├── orchestrator/
-│   ├── page_preparation/
-│   ├── layout_master/
-│   ├── block_router/
-│   ├── text_ocr/
-│   ├── formula_ocr/
-│   ├── table_ocr/
-│   ├── image_classifier/
-│   ├── image_ocr/
-│   ├── reading_order/
-│   ├── assembly/
-│   └── validation/
-├── shared/
-│   ├── schemas/
-│   ├── clients/
-│   └── utils/
-├── services/
-│   ├── orchestrator/
-│   ├── page_preparation/
-│   ├── layout_master/
-│   ├── block_router/
-│   ├── text_ocr/
-│   ├── formula_ocr/
-│   ├── table_ocr/
-│   ├── image_classifier/
-│   ├── image_ocr/
-│   ├── reading_order/
-│   ├── assembly/
-│   └── validation/
-├── scripts/
-├── data/
-│   ├── jobs/
-│   ├── models/
-│   └── cache/
-├── examples/
-└── tests/
-\end{lstlisting}
-
-\section{Service Internal Structure}
-
-Each service should have a similar internal skeleton to reduce friction:
-
-\begin{lstlisting}
-services/text_ocr/
-├── app/
-│   ├── main.py
-│   ├── api/
-│   ├── core/
-│   ├── models/
-│   └── config.py
-├── tests/
-├── requirements.txt
-└── Dockerfile
-\end{lstlisting}
-
-This consistency matters. It makes the whole monorepo easier to navigate.
-
-\section{Artifact Contract}
-
-Every job should have a predictable folder structure. Example:
-
-\begin{lstlisting}
-data/jobs/job_000001/
-├── original/
-│   └── input.pdf
-├── preprocessed/
-├── assets/
-│   ├── pages/
-│   │   ├── page_0001.png
-│   │   └── page_0002.png
-│   ├── layout/
-│   │   ├── page_0001.with_boxes.png
-│   │   └── page_0001.with_boxes_labeled.png
-│   ├── text_blocks/
-│   ├── tables/
-│   ├── formulas/
-│   └── images/
-├── debug/
-│   ├── layout_raw.json
-│   ├── layout_normalized.json
-│   └── service_responses/
-├── meta.json
-├── pipeline_trace.json
-├── logs.jsonl
-├── document.json
-└── document.md
-\end{lstlisting}
-
-\subsection{Why This Contract Is Important}
-
-The artifact contract creates a stable operational truth. Anyone can inspect a job and understand:
-
-\begin{itemize}[leftmargin=1.2cm]
-\item what the input was;
-\item what each stage produced;
-\item where a stage failed;
-\item whether the final result is trustworthy.
-\end{itemize}
-
-\section{Job State Model}
-
-Every job should keep an explicit state. Suggested stage states:
-
-\begin{itemize}[leftmargin=1.2cm]
-\item pending;
-\item running;
-\item completed;
-\item failed;
-\item degraded;
-\item skipped.
-\end{itemize}
-
-Suggested high-level job lifecycle:
-
-\begin{lstlisting}
-created
-uploaded
-preparing_pages
-layout_running
-layout_done
-routing_blocks
-text_ocr_running
-formula_ocr_running
-table_ocr_running
-image_classification_running
-reading_order_done
-assembly_done
-validation_done
-completed
-\end{lstlisting}
-
-Possible end states:
-\begin{itemize}[leftmargin=1.2cm]
-\item completed;
-\item degraded;
-\item failed.
-\end{itemize}
-
-\section{Docker and Configuration Model}
-
-\subsection{Why We Still Need Environment Variables}
-
-Docker isolates runtime, but it does not remove configuration. Services still need to know:
-
-\begin{itemize}[leftmargin=1.2cm]
-\item where other services live;
-\item what port to listen on;
-\item where models are mounted;
-\item where job artifacts are written;
-\item CPU or GPU mode;
-\item timeout and batch settings;
-\item log level.
-\end{itemize}
-
-\subsection{Recommended Files}
-
-\begin{itemize}[leftmargin=1.2cm]
-\item \texttt{.env.example} goes into Git;
-\item real \texttt{.env} stays local and is not committed.
-\end{itemize}
-
-\subsection{Example .env Values}
-
-\begin{lstlisting}
-ORCHESTRATOR_PORT=8000
-ARTIFACT_ROOT=/data/jobs
-MODEL_ROOT=/models
-LAYOUT_MASTER_URL=http://layout_master:8000
-TEXT_OCR_URL=http://text_ocr:8000
-FORMULA_OCR_URL=http://formula_ocr:8000
-TABLE_OCR_URL=http://table_ocr:8000
-IMAGE_CLASSIFIER_URL=http://image_classifier:8000
-IMAGE_OCR_URL=http://image_ocr:8000
-LOG_LEVEL=INFO
-\end{lstlisting}
-
-\section{Docker Compose Strategy}
-
-For the first version, only the orchestrator should usually expose a host port. Worker services can stay internal.
-
-\begin{lstlisting}
-Client browser --> localhost:8000 --> orchestrator
-orchestrator --> internal docker network --> workers
-\end{lstlisting}
-
-That keeps the local deployment cleaner and avoids unnecessary host-level port clutter.
-
-\docnote{As the system grows, different services may need different base images, Python versions, GPU access settings, and volume mounts. This is exactly why one container per service is the right foundation.}
-
-\section{Python, Virtual Environments, and Containers}
-
-A very important conceptual point from the project discussion is this:
-
-\begin{itemize}[leftmargin=1.2cm]
-\item a local \texttt{.venv} is optional and mainly useful for development convenience;
-\item the real runtime environment is each Docker container;
-\item each container already has its own Python interpreter and its own installed packages.
-\end{itemize}
-
-So the correct mental model is not ``one project, one venv''.
-
-The correct model is:
-
-\begin{lstlisting}
-orchestrator container -> its own Python + deps
-layout container       -> its own Python + deps
-text OCR container     -> its own Python + deps
-formula container      -> its own Python + deps
-\end{lstlisting}
-
-This is what allows different stacks to coexist.
-
-\section{Git and GitHub Strategy}
-
-\subsection{What Must Be Versioned}
-
-GitHub should store the durable project definition:
-
-\begin{itemize}[leftmargin=1.2cm]
-\item source code;
-\item Dockerfiles;
-\item docker-compose;
-\item configs;
-\item docs;
-\item schemas;
-\item scripts;
-\item tiny sample files;
-\item CI files later;
-\item \texttt{.env.example}.
-\end{itemize}
-
-\subsection{What Must Not Be Versioned}
-
-GitHub should \textbf{not} store:
-
-\begin{itemize}[leftmargin=1.2cm]
-\item huge model weights;
-\item generated artifacts;
-\item runtime logs;
-\item local caches;
-\item local \texttt{.env};
-\item \texttt{.venv};
-\item page images produced during jobs;
-\item temporary files.
-\end{itemize}
-
-\subsection{Recommended .gitignore Sections}
-
-\begin{lstlisting}
-# Python
-__pycache__/
-*.pyc
-.venv/
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-
-# Runtime data
-data/jobs/
-data/cache/
-logs/
-tmp/
-output/
-
-# Models
-models/
-data/models/
-*.safetensors
-*.bin
-*.pt
-*.pth
-*.onnx
-*.pdmodel
-*.pdiparams
-*.ckpt
-
-# IDE / OS
-.vscode/
-.idea/
-.DS_Store
-Thumbs.db
-
-# Secrets
-.env
-\end{lstlisting}
-
-\section{Large Models and Multi-Machine Work}
-
-A critical operational question in this project is how to work across a laptop, a home PC, or other machines when the system may use huge local LLMs or OCR models.
-
-\subsection{What GitHub Is For}
-
-GitHub is for:
-\begin{itemize}[leftmargin=1.2cm]
-\item code;
-\item project structure;
-\item Docker definitions;
-\item scripts;
-\item configs;
-\item documentation.
-\end{itemize}
-
-\subsection{What GitHub Is Not For}
-
-GitHub is not the right storage layer for hundreds of gigabytes of local model weights. Large local models should live outside the repository.
-
-\subsection{Correct Strategy}
-
-Use this split:
-
-\begin{itemize}[leftmargin=1.2cm]
-\item \textbf{GitHub:} code and architecture;
-\item \textbf{local disks / NAS / model storage:} weights and caches;
-\item \textbf{Docker mounts:} runtime access to those models.
-\end{itemize}
-
-\subsection{Per-Machine Example}
-
-Laptop:
-\begin{lstlisting}
-D:\models-lite\
-\end{lstlisting}
-
-Home PC:
-\begin{lstlisting}
-C:\models\
-\end{lstlisting}
-
-Linux workstation:
-\begin{lstlisting}
-/srv/models/
-\end{lstlisting}
-
-Each machine clones the same repository, but the local \texttt{.env} points containers to that machine's model directory.
-
-\subsection{Recommended Operational Pattern}
-
-\begin{enumerate}[leftmargin=1.2cm]
-\item clone the same GitHub repo on each machine;
-\item create local \texttt{.env};
-\item define machine-specific model paths;
-\item mount model directories into containers;
-\item run docker-compose locally.
-\end{enumerate}
-
-\subsection{Model Setup Scripts}
-
-The repository should include scripts such as:
-
-\begin{itemize}[leftmargin=1.2cm]
-\item \texttt{scripts/fetch-models.sh}
-\item \texttt{scripts/fetch-models.ps1}
-\end{itemize}
-
-These scripts can:
-
-\begin{itemize}[leftmargin=1.2cm]
-\item download approved models from their official source;
-\item copy models from a NAS or shared location;
-\item verify checksums;
-\item place files into expected folders.
-\end{itemize}
-
-That is far better than trying to store giant binary weights in Git.
-
-\section{Enumeration of Main Instruments and Technologies}
-
-This section lists the main instruments the project will use or is designed to support.
-
-\subsection{Infrastructure and Packaging}
-
-\begin{itemize}[leftmargin=1.2cm]
-\item \textbf{Git} -- local version control.
-\item \textbf{GitHub} -- remote code repository and collaboration hub.
-\item \textbf{Docker} -- runtime isolation per service.
-\item \textbf{Docker Compose} -- local multi-service orchestration.
-\end{itemize}
-
-\subsection{Programming and API Layer}
-
-\begin{itemize}[leftmargin=1.2cm]
-\item \textbf{Python} -- primary implementation language.
-\item \textbf{FastAPI} -- service HTTP APIs.
-\item \textbf{Pydantic} -- schema validation.
-\item \textbf{Uvicorn} -- ASGI server for services.
-\end{itemize}
-
-\subsection{Shared Engineering Tools}
-
-\begin{itemize}[leftmargin=1.2cm]
-\item \textbf{pytest} -- tests.
-\item \textbf{ruff / mypy} -- code quality and typing later.
-\item \textbf{logging / json logs} -- observability.
-\end{itemize}
-
-\subsection{Possible Document / Vision Engines}
-
-This architecture is intentionally engine-agnostic. Different workers can later use different stacks, for example:
-
-\begin{itemize}[leftmargin=1.2cm]
-\item layout model service;
-\item OCR model service;
-\item formula-recognition model service;
-\item table extraction service;
-\item local vision-language model for image classification.
-\end{itemize}
-
-The architecture cares more about \textbf{contracts} than about locking the project to one model.
-
-\section{Suggested API Contracts}
-
-\subsection{Health}
+The orchestrator exposes:
 
 \begin{lstlisting}
 GET /health
+POST /run
+\end{lstlisting}
 
-Response:
+The \texttt{/run} request body is:
+
+\begin{lstlisting}
 {
-  "status": "ok"
+  "input_path": "C:/input/test.pdf",
+  "dpi": 300
 }
 \end{lstlisting}
 
-\subsection{Capabilities}
+\texttt{dpi} is optional and can be 300 or 400.
+
+\subsection{Execution Order}
 
 \begin{lstlisting}
-GET /capabilities
-
-Response:
-{
-  "service": "text_ocr",
-  "version": "0.1.0",
-  "mode": "placeholder",
-  "supported_inputs": ["image_crop"]
-}
+validate input
+  -> create job_id
+  -> create job folders
+  -> copy original file
+  -> write metadata, trace, log
+  -> render PDF pages
+  -> call layout service
+  -> write raw and normalized layout artifacts
+  -> create overlays and crops
+  -> route crops to OCR or vision
+  -> call OCR service for text/table/formula crops
+  -> call optional vision service for image/chart crops
+  -> write pending vision manifest if needed
+  -> build content_stream.json
+  -> render output/article.md
 \end{lstlisting}
 
-\subsection{Process}
+\section{Job Artifact Contract}
+
+Every run creates:
 
 \begin{lstlisting}
-POST /process
-
-Request:
-{
-  "job_id": "job_000001",
-  "block_id": "p1_b7",
-  "input_path": "/data/jobs/job_000001/assets/text_blocks/p1_b7.png"
-}
+jobs/output/<job_id>/
++-- original/
++-- preprocessed/
++-- assets/
+|   +-- pages/
+|   +-- crops/
+|   +-- layout/
++-- debug/
+|   +-- preparing_for_layout.json
+|   +-- layout_raw_page_0001.json
+|   +-- layout_normalized_page_0001.json
+|   +-- layout_assets.json
+|   +-- ocr_manifest.json
+|   +-- ocr_raw_page_0001.json
+|   +-- ocr_normalized_page_0001.json
+|   +-- vision_manifest.json
+|   +-- vision_raw_page_0001.json
+|   +-- vision_normalized_page_0001.json
+|   +-- vision_pending_manifest.json
+|   +-- content_stream.json
+|   +-- assembly_manifest.json
++-- output/
+|   +-- article.md
++-- meta.json
++-- trace.json
++-- logs.jsonl
 \end{lstlisting}
 
+\subsection{Artifact Meaning}
+
+\begin{itemize}[leftmargin=1.2cm]
+\item \texttt{original/}: unchanged input file.
+\item \texttt{assets/pages/}: rendered page PNG files.
+\item \texttt{assets/layout/}: human-readable layout overlays.
+\item \texttt{assets/crops/}: crops for every layout block.
+\item \texttt{debug/}: normalized and raw stage artifacts.
+\item \texttt{output/article.md}: final LLM-ready article representation.
+\item \texttt{meta.json}: high-level job and stage summary.
+\item \texttt{trace.json}: ordered event timeline.
+\item \texttt{logs.jsonl}: append-only structured logs.
+\end{itemize}
+
+\section{Layout Service}
+
+\subsection{Role}
+
+Layout is an external persistent HTTP service. It receives one rendered page
+image and returns structured layout blocks. The layout service owns detection
+and block typing. It does not run OCR, generate crops, or assemble Markdown.
+
+Current layout implementations:
+
+\begin{itemize}[leftmargin=1.2cm]
+\item \texttt{services/layout\_stub}: fast deterministic stub.
+\item \texttt{services/layout\_ppdoclayoutv3\_cpu}: CPU PP-DocLayoutV3 backend.
+\end{itemize}
+
+\subsection{Endpoints}
+
 \begin{lstlisting}
-Response:
+GET  /health
+GET  /ready
+POST /layout
+\end{lstlisting}
+
+\subsection{Normalized Layout}
+
+The service response is persisted as raw output, then normalized into a stable
+format used by downstream stages:
+
+\begin{lstlisting}
 {
-  "job_id": "job_000001",
-  "block_id": "p1_b7",
+  "stage": "layout",
   "status": "completed",
-  "output_path": "/data/jobs/job_000001/assets/text_blocks/p1_b7.result.json"
+  "source": "PP-DocLayoutV3",
+  "job_id": "job-0001",
+  "page_number": 1,
+  "image": {
+    "path": ".../assets/pages/page_0001.png",
+    "width": 2480,
+    "height": 3508
+  },
+  "blocks": [
+    {
+      "block_id": "p1_b1",
+      "type": "text",
+      "layout_label": "content",
+      "bbox": [100, 100, 700, 180],
+      "confidence": 0.98,
+      "order": 1,
+      "source": "PP-DocLayoutV3"
+    }
+  ],
+  "warnings": []
 }
 \end{lstlisting}
 
-\section{Suggested Shared Schemas}
+\section{Block Routing}
 
-The \texttt{shared/schemas} package should define canonical structures such as:
-
-\begin{itemize}[leftmargin=1.2cm]
-\item \texttt{Job}
-\item \texttt{StageStatus}
-\item \texttt{LayoutBlock}
-\item \texttt{OCRResult}
-\item \texttt{FormulaResult}
-\item \texttt{TableResult}
-\item \texttt{ImageClassificationResult}
-\item \texttt{ArtifactRecord}
-\end{itemize}
-
-This keeps all services speaking the same language.
-
-\section{Ready Build Plan}
-
-This section is the practical plan you can follow almost directly while building the project.
-
-\subsection{Stage 0: Create the Repository}
-
-\begin{enumerate}[leftmargin=1.2cm]
-\item Create a new Git repository.
-\item Create the monorepo folder tree.
-\item Add \texttt{README.md}, \texttt{LICENSE}, \texttt{.gitignore}, \texttt{.dockerignore}, and \texttt{.env.example}.
-\item Commit the empty structure first.
-\end{enumerate}
-
-\subsection{Stage 1: Create Placeholder Services}
-
-For each planned service:
-
-\begin{enumerate}[leftmargin=1.2cm]
-\item create \texttt{app/main.py};
-\item add \texttt{requirements.txt};
-\item add a service-specific \texttt{Dockerfile};
-\item implement:
-  \begin{itemize}
-  \item \texttt{/health}
-  \item \texttt{/capabilities}
-  \item \texttt{/process}
-  \end{itemize}
-\item return placeholder JSON from \texttt{/process}.
-\end{enumerate}
-
-\subsection{Stage 2: Create the Orchestrator}
-
-\begin{enumerate}[leftmargin=1.2cm]
-\item create upload endpoint;
-\item generate \texttt{job\_id};
-\item create the artifact folder tree;
-\item call page preparation service;
-\item call layout service;
-\item for now call placeholder workers;
-\item write a placeholder \texttt{document.md};
-\item expose job status endpoint.
-\end{enumerate}
-
-\subsection{Stage 3: Add docker-compose}
-
-\begin{enumerate}[leftmargin=1.2cm]
-\item define one service per container;
-\item expose only orchestrator to host;
-\item mount:
-  \begin{itemize}
-  \item artifact root;
-  \item model directories;
-  \item optional config volumes.
-  \end{itemize}
-\item verify orchestrator can reach workers by service name.
-\end{enumerate}
-
-\subsection{Stage 4: Add Shared Schemas}
-
-\begin{enumerate}[leftmargin=1.2cm]
-\item define Pydantic models for job, stage, block, and result types;
-\item use these schemas in request and response bodies;
-\item centralize status enums and artifact metadata.
-\end{enumerate}
-
-\subsection{Stage 5: Add Basic Integration Tests}
-
-\begin{enumerate}[leftmargin=1.2cm]
-\item health checks for all services;
-\item orchestrator pipeline smoke test;
-\item verify placeholder output files exist;
-\item verify \texttt{document.md} and \texttt{document.json} are generated.
-\end{enumerate}
-
-\subsection{Stage 6: Replace Placeholders One by One}
-
-\begin{enumerate}[leftmargin=1.2cm]
-\item first replace page preparation with real PDF rendering;
-\item then replace layout;
-\item then text OCR;
-\item then formula OCR;
-\item then table OCR;
-\item then image classification;
-\item then reading order and validation improvements.
-\end{enumerate}
-
-\subsection{Stage 7: Production Hardening Later}
-
-\begin{enumerate}[leftmargin=1.2cm]
-\item retries;
-\item degraded-mode logic;
-\item queue-based execution if needed;
-\item better metrics;
-\item distributed workers;
-\item web UI or admin panel later.
-\end{enumerate}
-
-\section{Recommended Reading Order for Building the Project}
-
-If you want to study the project and build it only from this plan, use this order:
-
-\begin{enumerate}[leftmargin=1.2cm]
-\item read the high-level architecture section;
-\item read the service descriptions;
-\item read the repository structure;
-\item read the artifact contract;
-\item read the Docker and configuration model;
-\item read the Git and model-storage strategy;
-\item follow the ready build plan stage by stage;
-\item only then integrate real models.
-\end{enumerate}
-
-That order will keep the project understandable.
-
-\section{Final Architecture Summary}
-
-The project should be understood as this:
-
-\begin{itemize}[leftmargin=1.2cm]
-\item \textbf{GitHub repository} = code, docs, configs, Dockerfiles, schemas.
-\item \textbf{Docker Compose} = starts the whole platform locally.
-\item \textbf{Each service} = one container, one responsibility, one runtime.
-\item \textbf{FastAPI} = simple HTTP communication layer.
-\item \textbf{Artifact folders} = persistent operational truth of each job.
-\item \textbf{Local model folders} = heavy weights outside Git.
-\end{itemize}
-
-This design is the right base for a system that starts as a clean placeholder scaffold and later grows into a serious offline PDF-to-Markdown platform.
-
-\section{Concise Master Scheme}
+Routing is deterministic and model-free. It maps layout labels to downstream
+services, recognition tasks, requested output formats, and assembly roles.
 
 \begin{lstlisting}
-               +----------------------+
-               |       Client         |
-               +----------+-----------+
-                          |
-                          v
-               +----------------------+
-               |    Orchestrator      |
-               | job control + API    |
-               +----------+-----------+
-                          |
-                          v
-               +----------------------+
-               |  Page Preparation    |
-               +----------+-----------+
-                          |
-                          v
-               +----------------------+
-               |    Layout Master     |
-               +----------+-----------+
-                          |
-                          v
-               +----------------------+
-               |     Block Router     |
-               +---+----+----+----+---+
-                   |    |    |    |
-                   v    v    v    v
-               +------+ +------+ +------+
-               |Text  | |Form. | |Table |
-               | OCR  | | OCR  | | OCR  |
-               +------+ +------+ +------+
-                          |
-                          v
-                    +-----------+
-                    |  Image    |
-                    |Classifier |
-                    +-----+-----+
-                          |
-                          v
-                    +-----------+
-                    | Image OCR |
-                    +-----+-----+
-                          |
-                          v
-                    +-----------+
-                    | Reading   |
-                    |  Order    |
-                    +-----+-----+
-                          |
-                          v
-                    +-----------+
-                    | Assembly  |
-                    +-----+-----+
-                          |
-                          v
-                    +-----------+
-                    |Validation |
-                    +-----+-----+
-                          |
-                          v
-               +----------------------+
-               | Markdown + JSON +    |
-               | artifacts + logs     |
-               +----------------------+
+text-like blocks -> OCR    -> markdown
+table blocks     -> OCR    -> markdown
+formula blocks   -> OCR    -> latex
+image/chart      -> Vision -> markdown or pending placeholder
 \end{lstlisting}
+
+Native PP-DocLayoutV3 labels are preferred when available because they preserve
+more semantic detail than canonical block types.
+
+\subsection{Important Label Families}
+
+\begin{longtable}{p{4cm}p{3cm}p{3cm}p{3cm}}
+\toprule
+Label family & Target & Task & Format \\
+\midrule
+Text-like labels & OCR & text & markdown \\
+Table & OCR & table & markdown \\
+Display/inline formulas & OCR & formula & latex \\
+Image labels & Vision & image & none \\
+Chart labels & Vision & chart & none \\
+\bottomrule
+\end{longtable}
+
+Images and charts are intentionally not sent to OCR. They require visual
+description, chart extraction, diagram reconstruction, or placeholder handling.
+
+\section{OCR Service}
+
+\subsection{Role}
+
+OCR is an external persistent worker service. It receives one cropped block
+image and returns recognized content in the format requested by the
+orchestrator.
+
+Current OCR implementations:
+
+\begin{itemize}[leftmargin=1.2cm]
+\item \texttt{services/ocr\_stub}: deterministic contract-compatible stub.
+\item \texttt{services/ocr\_glm}: real GLM-OCR worker.
+\end{itemize}
+
+Docker Compose points OCR traffic at \texttt{ocr\_glm} by default.
+
+\subsection{Endpoints}
+
+\begin{lstlisting}
+GET  /health
+GET  /ready
+POST /ocr
+\end{lstlisting}
+
+\subsection{GLM-OCR Prompt Mapping}
+
+\begin{lstlisting}
+text    -> Text Recognition:
+table   -> Table Recognition:
+formula -> Formula Recognition:
+\end{lstlisting}
+
+Formula responses are normalized by removing outer display wrappers such as
+\texttt{\$\$...\$\$}. Assembly owns final Markdown wrapping.
+
+\section{Vision Service}
+
+\subsection{Role}
+
+Vision is optional. It receives image/chart/figure crops and returns
+Markdown-ready visual content. If the service is not configured, unavailable,
+or times out, the pipeline writes a pending vision manifest and continues:
+
+\begin{lstlisting}
+debug/vision_pending_manifest.json
+\end{lstlisting}
+
+Current implementation:
+
+\begin{itemize}[leftmargin=1.2cm]
+\item \texttt{services/vision\_llama}: adapter around an external multimodal
+  \texttt{llama-server}.
+\end{itemize}
+
+\subsection{Runtime Split}
+
+\begin{lstlisting}
+Windows host:
+  llama-server on http://127.0.0.1:8080
+
+Docker:
+  vision_llama service on http://vision_llama:8000
+  calls http://host.docker.internal:8080
+\end{lstlisting}
+
+\subsection{Vision Output}
+
+The adapter asks the model to classify a visual crop as:
+
+\begin{lstlisting}
+photo_or_illustration
+chart_or_plot
+diagram_or_flowchart
+table_like_visual
+unknown
+\end{lstlisting}
+
+It returns Markdown for descriptions, charts, approximate data tables, or
+Mermaid diagrams when possible.
+
+\section{Assembly}
+
+Assembly is currently an orchestrator module rather than a separate worker. It
+does not perform model inference. It reads normalized layout, OCR, vision, and
+pending vision artifacts.
+
+It produces:
+
+\begin{lstlisting}
+debug/content_stream.json
+debug/assembly_manifest.json
+output/article.md
+\end{lstlisting}
+
+The current ordering rule is:
+
+\begin{lstlisting}
+page_number -> order -> bbox top -> bbox left -> block_id
+\end{lstlisting}
+
+Rendering behavior:
+
+\begin{itemize}[leftmargin=1.2cm]
+\item titles become Markdown \texttt{\#} headings.
+\item headings become Markdown \texttt{\#\#} headings.
+\item text remains Markdown paragraphs.
+\item tables are inserted as Markdown or HTML returned by OCR.
+\item formulas are wrapped as display or inline LaTeX.
+\item completed visual blocks insert vision Markdown.
+\item pending visual blocks become blockquote placeholders.
+\end{itemize}
+
+\section{Docker Compose Runtime}
+
+Docker Compose currently includes:
+
+\begin{itemize}[leftmargin=1.2cm]
+\item \texttt{orchestrator}
+\item \texttt{layout\_stub}
+\item \texttt{layout\_ppdoclayoutv3\_cpu}
+\item \texttt{ocr\_stub}
+\item \texttt{ocr\_glm}
+\item \texttt{vision\_llama}
+\item \texttt{assembly\_stub}
+\end{itemize}
+
+The default real pipeline path is:
+
+\begin{lstlisting}
+orchestrator
+  -> layout_ppdoclayoutv3_cpu
+  -> ocr_glm
+  -> vision_llama, if external llama-server is ready
+\end{lstlisting}
+
+Important timeouts:
+
+\begin{lstlisting}
+LAYOUT_TIMEOUT_SECONDS=120
+OCR_TIMEOUT_SECONDS=600
+VISION_TIMEOUT_SECONDS=1200
+\end{lstlisting}
+
+The OCR image installs CPU PyTorch wheels explicitly:
+
+\begin{lstlisting}
+torch==2.9.1+cpu
+torchvision==0.24.1+cpu
+\end{lstlisting}
+
+\section{Representative Fixtures and Validation}
+
+Fixtures can be regenerated with:
+
+\begin{lstlisting}
+.\.venv\Scripts\python.exe scripts\generate_test_pdfs.py
+\end{lstlisting}
+
+Important fixture PDFs:
+
+\begin{itemize}[leftmargin=1.2cm]
+\item \texttt{formula\_table\_fixture.pdf}: compact one-page smoke document.
+\item \texttt{science\_mixed\_content.pdf}: two-page document with headings,
+  prose, a table, formulas, embedded image, bar chart, and line chart.
+\end{itemize}
+
+After a run, inspect a job with:
+
+\begin{lstlisting}
+.\.venv\Scripts\python.exe scripts\report_job.py <job_id>
+\end{lstlisting}
+
+The report summarizes stage statuses, layout labels, routing split, OCR
+formats, vision status, assembly sources, and artifact paths.
+
+\section{Known Verified Run}
+
+A full local run on \texttt{science\_mixed\_content.pdf} completed with:
+
+\begin{lstlisting}
+layout:   completed, 18 blocks, source=PP-DocLayoutV3
+ocr:      completed, 15 blocks, source=GLM-OCR
+vision:   completed, 3 blocks, source=qwen3.6-27b-q4_k_m
+assembly: completed, 18 blocks
+pending vision blocks: 0
+\end{lstlisting}
+
+The assembled article included real text, table output, LaTeX formulas, and
+vision-generated chart descriptions.
+
+\section{CPU Layout Scaling Notes}
+
+PP-DocLayoutV3 through PaddleOCR/Paddle already uses internal CPU
+parallelism. Current installed defaults are:
+
+\begin{lstlisting}
+DEFAULT_ENABLE_MKLDNN = True
+DEFAULT_CPU_THREADS = 10
+DEFAULT_MKLDNN_CACHE_CAPACITY = 10
+\end{lstlisting}
+
+Local measurements:
+
+\begin{lstlisting}
+1 unrestricted layout worker:
+  about 5.3 seconds per page
+
+3 separate layout containers limited to 2 CPU each:
+  about 18.8 seconds per page on average
+\end{lstlisting}
+
+The second setup was slower because each worker was starved. One Paddle
+inference process wants roughly 8-10 CPU threads.
+
+Memory estimate:
+
+\begin{lstlisting}
+observed warmed worker peak: about 668 MiB
+planning estimate: about 1.0 GiB
+conservative budget: about 1.2 GiB per worker
+\end{lstlisting}
+
+Future high-core machines should scale layout with a worker pool:
+
+\begin{lstlisting}
+worker_count = floor(usable_cpu_cores / 10)
+also cap by available_memory_gb / 1.2
+\end{lstlisting}
+
+Example sizing:
+
+\begin{lstlisting}
+8 cores   -> 1 worker
+10 cores  -> 1 worker
+15 cores  -> 1 worker
+20 cores  -> 2 workers
+32 cores  -> 3 workers
+64 cores  -> 6 workers
+400 cores -> about 40 workers, if memory and I/O allow it
+\end{lstlisting}
+
+This is a future development direction, not current implementation. The
+detailed planning note lives in \texttt{docs/LAYOUT\_SCALING.md}.
+
+\section{Current Limitations}
+
+\begin{itemize}[leftmargin=1.2cm]
+\item PP-DocLayoutV3 is wired as a CPU-only service and still needs broader
+  quality validation on representative documents.
+\item GLM-OCR CPU inference is slow because crops are processed one at a time.
+\item \texttt{vision\_llama} depends on an external multimodal
+  \texttt{llama-server}; on CPU-class hardware it can be slow.
+\item Chart extraction from vision output is approximate.
+\item Assembly does not yet repair multi-column reading order, merge broken
+  paragraphs, or associate captions with figures/charts beyond deterministic
+  layout order.
+\item There is not yet a GPU PP-DocLayoutV3 container.
+\item There is not yet a quality validation harness with expected semantic
+  assertions for representative jobs.
+\end{itemize}
+
+\section{Roadmap}
+
+\subsection{Near Term}
+
+\begin{itemize}[leftmargin=1.2cm]
+\item Add a quality validation harness for representative job artifacts.
+\item Validate CPU PP-DocLayoutV3 output quality on real and synthetic PDFs.
+\item Validate GLM-OCR output quality on text, table, and formula crops.
+\item Validate \texttt{vision\_llama} output on images, charts, and diagrams.
+\item Improve vision prompts and normalization for chart data and Mermaid.
+\end{itemize}
+
+\subsection{Performance}
+
+\begin{itemize}[leftmargin=1.2cm]
+\item Improve OCR throughput with batching, crop parallelism, or GPU execution.
+\item Add future layout worker-pool support for high-core machines.
+\item Keep one-worker \texttt{LAYOUT\_SERVICE\_URL} mode for ordinary desktops.
+\item Consider \texttt{LAYOUT\_SERVICE\_URLS} for multi-worker page distribution.
+\end{itemize}
+
+\subsection{Backends}
+
+\begin{itemize}[leftmargin=1.2cm]
+\item Add a separate GPU PP-DocLayoutV3 service/container.
+\item Replace or augment \texttt{vision\_llama} with specialized image, chart,
+  and diagram processors when quality requirements are clearer.
+\item Keep all replacements behind stable shared contracts.
+\end{itemize}
+
+\subsection{Assembly Quality}
+
+\begin{itemize}[leftmargin=1.2cm]
+\item Improve multi-column reading order.
+\item Merge paragraphs split across layout blocks.
+\item Associate captions with figures and charts.
+\item Optionally filter headers, footers, and page numbers.
+\end{itemize}
+
+\section{Final Summary}
+
+SCI-OCR is now best understood as an artifact-driven, replaceable-backend
+pipeline:
+
+\begin{lstlisting}
+FastAPI orchestrator
+  + stable shared contracts
+  + PP-DocLayoutV3 CPU layout
+  + GLM-OCR CPU OCR
+  + optional llama-server vision
+  + deterministic assembly
+  + persistent artifacts for every stage
+\end{lstlisting}
+
+The next important engineering move is not another placeholder service. It is
+quality measurement: build validation around representative PDFs so layout,
+OCR, vision, and assembly improvements can be judged with repeatable evidence.
 
 \end{document}

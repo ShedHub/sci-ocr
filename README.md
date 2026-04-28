@@ -28,7 +28,7 @@ The system currently supports:
 - layout visual overlays in `assets/layout/page_XXXX_layout.png`
 - block crops for every layout block in `assets/crops/page_XXXX/`
 - native PP-DocLayoutV3 labels preserved as `layout_label` when available
-- block routing rules that map layout labels to OCR or future vision workers
+- block routing rules that map layout labels to OCR or vision workers
 - shared Pydantic schemas for the OCR service request/response contract
 - OCR stub service with `GET /health`, `GET /ready`, and `POST /ocr`
 - GLM-OCR worker service with `GET /health`, `GET /ready`, and `POST /ocr`
@@ -115,7 +115,7 @@ a table, and rendered math formulas.
 `science_mixed_content.pdf` is a two-page validation document with headings,
 prose, a table, rendered formulas, an embedded image, a bar chart, and a
 classic line graph. It is intended for validating PP-DocLayoutV3 labels, crop
-generation, OCR routing, and future vision routing.
+generation, OCR routing, and vision routing.
 
 ## How To Run
 
@@ -247,6 +247,13 @@ VISION_TIMEOUT_SECONDS=1200
 The compact one-page fixture currently takes several minutes on CPU because OCR
 is called once per routed crop.
 
+CPU PP-DocLayoutV3 already uses Paddle/MKLDNN internal threading. Local
+measurements showed that one unrestricted layout worker processed a page in
+roughly 5.3 seconds, while three workers limited to 2 CPU each slowed to roughly
+18.8 seconds per page on average. Future high-core machines should scale layout
+through a properly sized worker pool rather than many underpowered containers.
+The current planning note is in `docs/LAYOUT_SCALING.md`.
+
 ## API
 
 Health check:
@@ -340,7 +347,7 @@ The report includes:
 - stage statuses from `meta.json`
 - per-page normalized layout blocks
 - canonical type and native `layout_label` summaries
-- crop routing split between OCR and future vision
+- crop routing split between OCR and vision
 - OCR task and output format summaries
 - completed and pending vision block summaries
 - assembly source/status summaries
@@ -363,7 +370,7 @@ API request
 -> call HTTP layout service for each rendered page
 -> write per-page raw and normalized layout artifacts
 -> create layout overlays and crops for every layout block
--> route crops to OCR or future vision processing
+-> route crops to OCR or vision processing
 -> check HTTP OCR service readiness
 -> call HTTP OCR service for text/table/formula crops
 -> write raw and normalized OCR artifacts

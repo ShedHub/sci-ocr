@@ -15,7 +15,7 @@ The current implementation focuses on the foundation:
 - filesystem artifacts
 - PDF-to-PNG page preparation for layout
 - HTTP-backed stub-first service boundaries
-- deterministic block routing rules for OCR and future vision workers
+- deterministic block routing rules for OCR and vision workers
 - OCR HTTP boundary with contract-compatible stub and GLM-OCR workers
 - optional vision HTTP boundary with a llama-server-backed adapter
 
@@ -173,7 +173,7 @@ Responsibilities:
 - accept one rendered page through `POST /layout`
 - return structured layout blocks with type, bbox, confidence, and order
 
-The planned real backend is `PP-DocLayoutV3`.
+The current real backend is `PP-DocLayoutV3`.
 
 During development, `layout_stub` implements the same API shape without loading
 the real model.
@@ -192,6 +192,14 @@ The current PP-DocLayoutV3 runtime target is CPU-only and lives in
 separate service/container rather than changing the CPU service in place. The
 orchestrator should keep selecting the active layout backend through
 `LAYOUT_SERVICE_URL`.
+
+CPU PP-DocLayoutV3 already uses Paddle/MKLDNN internal threading. Local
+measurements show that one unrestricted worker is faster than several
+underpowered workers limited to 2 CPU each. Future high-core deployments should
+prefer a worker pool sized around roughly 10 CPU threads and 1.0-1.2 GB memory
+per warmed layout worker, with pages distributed across workers for throughput.
+The detailed notes and proposed auto-sizing strategy are documented in
+`docs/LAYOUT_SCALING.md`.
 
 ## Persistent Container Rule
 
@@ -243,7 +251,7 @@ Orchestrator owns:
 - raw artifact persistence
 - normalized artifact persistence
 - crop generation from bbox
-- routing blocks to OCR or future vision pipelines
+- routing blocks to OCR or vision pipelines
 - OCR request orchestration
 - raw and normalized OCR artifact persistence
 - vision request orchestration
@@ -302,8 +310,8 @@ output/article.md
 
 Ordering is based on `page_number`, layout `order`, and bbox fallback
 coordinates. This keeps headings, paragraphs, tables, formulas, captions, and
-future image/chart descriptions in the same approximate reading sequence as the
-source article. If vision results are not available yet, assembly inserts
+image/chart descriptions in the same approximate reading sequence as the source
+article. If vision results are not available yet, assembly inserts
 pending placeholders for image and chart blocks.
 
 The detailed assembly contract is documented in `docs/ASSEMBLY.md`.

@@ -293,7 +293,10 @@ differently.
 - Docker Compose calls `ocr_glm` by default. `ocr_stub` is still useful for fast
   local tests.
 - GLM-OCR CPU inference is slow because OCR-routed crops are processed one at a
-  time; batching, parallelism, or GPU execution are future performance work.
+  time; batching, parallelism, or GPU execution are planned performance work.
+- CPU PP-DocLayoutV3 already uses Paddle/MKLDNN internal threading. Do not split
+  a normal CPU into many undersized layout containers; use a properly sized
+  worker pool in future high-core deployments. See `docs/LAYOUT_SCALING.md`.
 - The temporary `vision_llama` backend depends on an external multimodal
   `llama-server`; if it is unavailable, image and chart crops are recorded as
   pending.
