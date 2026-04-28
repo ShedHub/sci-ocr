@@ -28,14 +28,23 @@
 - Verify a full Docker Compose run with PP-DocLayoutV3 and GLM-OCR on
   `formula_table_fixture.pdf`
 - Add configurable layout and OCR HTTP timeouts for CPU model workers
+- Add a shared vision contract, optional vision stage, and llama-server-backed
+  `vision_llama` adapter for image/chart crops
+- Insert completed vision Markdown into assembled `article.md`, with pending
+  fallback when the vision backend is unavailable
 
 ## Next
 
 - Validate CPU PP-DocLayoutV3 output quality on representative PDFs
 - Validate GLM-OCR worker output quality on representative crops
+- Validate `vision_llama` output quality on representative image, chart, and
+  diagram crops
+- Improve vision prompts and output normalization for chart data and Mermaid
+  diagrams
 - Improve OCR throughput with batching, parallel crop processing, or GPU
   execution
-- Add a future vision service for image and chart blocks
+- Replace or augment the temporary llama-server vision backend with specialized
+  image, chart, and diagram processors when quality requirements are clearer
 - Improve assembly for multi-column reading order, paragraph merging, and
   figure/chart caption association
 - Add a separate GPU PP-DocLayoutV3 container and orchestrator backend switch

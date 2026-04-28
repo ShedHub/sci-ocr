@@ -10,11 +10,14 @@ services:
       LAYOUT_TIMEOUT_SECONDS: 120
       OCR_SERVICE_URL: http://ocr_glm:8000
       OCR_TIMEOUT_SECONDS: 600
+      VISION_SERVICE_URL: http://vision_llama:8000
+      VISION_TIMEOUT_SECONDS: 1200
     volumes:
       - ./jobs:/app/jobs
     depends_on:
       - layout_ppdoclayoutv3_cpu
       - ocr_glm
+      - vision_llama
 
   layout_stub:
     build:
@@ -59,6 +62,22 @@ services:
     volumes:
       - ./jobs:/app/jobs
       - ./models:/models:ro
+
+  vision_llama:
+    build:
+      context: .
+      dockerfile: services/vision_llama/Dockerfile
+    ports:
+      - "8006:8000"
+    environment:
+      LLAMA_SERVER_URL: http://host.docker.internal:8080
+      LLAMA_TIMEOUT_SECONDS: 1200
+      LLAMA_MAX_TOKENS: 512
+      LLAMA_TEMPERATURE: 0.1
+      VISION_MODEL_NAME: qwen3.6-27b-q4_k_m
+      VISION_MODEL_VERSION: local-gguf
+    volumes:
+      - ./jobs:/app/jobs
 
   assembly_stub:
     build:

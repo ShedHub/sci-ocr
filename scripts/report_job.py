@@ -51,6 +51,13 @@ def iter_ocr_artifacts(job_dir: Path) -> list[dict[str, Any]]:
     ]
 
 
+def iter_vision_artifacts(job_dir: Path) -> list[dict[str, Any]]:
+    return [
+        read_json(path)
+        for path in sorted((job_dir / "debug").glob("vision_normalized_page_*.json"))
+    ]
+
+
 def format_counter(counter: Counter[str]) -> str:
     if not counter:
         return "none"
@@ -143,11 +150,29 @@ def print_ocr_summary(ocr_artifacts: list[dict[str, Any]]) -> None:
     print(f"  formats: {format_counter(format_counts)}")
 
 
-def print_vision_summary(job_dir: Path) -> None:
+def print_vision_summary(job_dir: Path, vision_artifacts: list[dict[str, Any]]) -> None:
     manifest_path = job_dir / "debug" / "vision_pending_manifest.json"
     print("Vision:")
-    if not manifest_path.is_file():
+    if not manifest_path.is_file() and not vision_artifacts:
         print("  vision_pending_manifest.json not found")
+        return
+
+    if vision_artifacts:
+        visual_type_counts: Counter[str] = Counter()
+        format_counts: Counter[str] = Counter()
+        source_counts: Counter[str] = Counter()
+        for artifact in vision_artifacts:
+            blocks = artifact.get("blocks", [])
+            print(f"  page {artifact['page_number']}: {len(blocks)} completed blocks")
+            for block in blocks:
+                visual_type_counts[block.get("visual_type", "unknown")] += 1
+                format_counts[block.get("format", "unknown")] += 1
+                source_counts[block.get("source", artifact.get("source", "unknown"))] += 1
+        print(f"  completed visual types: {format_counter(visual_type_counts)}")
+        print(f"  completed formats: {format_counter(format_counts)}")
+        print(f"  completed sources: {format_counter(source_counts)}")
+
+    if not manifest_path.is_file():
         return
 
     manifest = read_json(manifest_path)
@@ -213,6 +238,7 @@ def main() -> int:
     meta = read_json(meta_path)
     layout_artifacts = iter_layout_artifacts(job_dir)
     ocr_artifacts = iter_ocr_artifacts(job_dir)
+    vision_artifacts = iter_vision_artifacts(job_dir)
 
     print(f"Job: {meta.get('job_id', job_dir.name)}")
     print(f"Status: {meta.get('status', 'unknown')}")
@@ -228,7 +254,7 @@ def main() -> int:
     print()
     print_ocr_summary(ocr_artifacts)
     print()
-    print_vision_summary(job_dir)
+    print_vision_summary(job_dir, vision_artifacts)
     print()
     print_assembly_summary(job_dir)
     print()

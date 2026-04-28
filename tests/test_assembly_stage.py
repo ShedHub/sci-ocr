@@ -168,3 +168,105 @@ def test_assembly_builds_ordered_stream_and_markdown(tmp_path) -> None:
     assert [entry["block_id"] for entry in stream] == ["p1_b1", "p1_b2", "p1_b3"]
     assert stream[2]["source"] == "vision_pending"
     assert markdown == "# A Science Article\n\n$$\nE = mc^2\n$$\n\n> [Chart pending: p1_b3]\n"
+
+
+def test_assembly_uses_completed_vision_blocks(tmp_path) -> None:
+    paths = {
+        "debug_dir": tmp_path / "debug",
+    }
+
+    write_json(
+        paths["debug_dir"] / "layout_normalized_page_0001.json",
+        {
+            "stage": "layout",
+            "status": "completed",
+            "source": "fixture_layout",
+            "job_id": "job-test",
+            "page_number": 1,
+            "image": {"path": "page.png", "width": 100, "height": 100},
+            "blocks": [
+                {
+                    "block_id": "p1_b1",
+                    "type": "figure",
+                    "layout_label": "chart",
+                    "bbox": [10, 10, 90, 80],
+                    "confidence": 0.9,
+                    "order": 1,
+                    "source": "fixture_layout",
+                },
+            ],
+            "warnings": [],
+        },
+    )
+    write_json(
+        paths["debug_dir"] / "layout_assets.json",
+        {
+            "stage": "layout_assets",
+            "status": "completed",
+            "job_id": "job-test",
+            "pages": [
+                {
+                    "page_number": 1,
+                    "crops": [
+                        {
+                            "page_number": 1,
+                            "block_id": "p1_b1",
+                            "image_path": "p1_b1.png",
+                            "routing": {
+                                "target_service": "vision",
+                                "recognition_task": "chart",
+                                "requested_format": "none",
+                                "content_role": "chart",
+                            },
+                        },
+                    ],
+                }
+            ],
+        },
+    )
+    write_json(
+        paths["debug_dir"] / "vision_normalized_page_0001.json",
+        {
+            "stage": "vision",
+            "status": "completed",
+            "source": "vision_llama",
+            "job_id": "job-test",
+            "page_number": 1,
+            "blocks": [
+                {
+                    "job_id": "job-test",
+                    "page_number": 1,
+                    "block_id": "p1_b1",
+                    "content_role": "chart",
+                    "recognition_task": "chart",
+                    "visual_type": "chart_or_plot",
+                    "format": "markdown",
+                    "content": "Visual type: chart_or_plot\n\nApproximate chart data.",
+                    "structured_data": {},
+                    "bbox": [10, 10, 90, 80],
+                    "order": 1,
+                    "image_path": "p1_b1.png",
+                    "source": "vision_llama",
+                    "warnings": [],
+                },
+            ],
+            "warnings": [],
+        },
+    )
+    write_json(
+        paths["debug_dir"] / "vision_pending_manifest.json",
+        {
+            "stage": "vision",
+            "status": "completed",
+            "job_id": "job-test",
+            "blocks": [],
+            "block_count": 0,
+        },
+    )
+
+    stream, warnings = build_content_stream(paths)
+    markdown = render_markdown(stream)
+
+    assert warnings == []
+    assert stream[0]["source"] == "vision_llama"
+    assert "Approximate chart data." in markdown

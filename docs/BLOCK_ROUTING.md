@@ -59,7 +59,7 @@ Field meaning:
 Supported routing targets:
 
 - `ocr`: text-oriented recognition service, expected to be backed by GLM-OCR.
-- `vision`: future image, figure, and chart understanding service.
+- `vision`: optional image, figure, and chart understanding service.
 - `skip`: reserved for blocks that should not be processed downstream.
 
 The current module only routes to `ocr` and `vision`.
@@ -71,8 +71,8 @@ Supported recognition tasks:
 - `text`: text-like regions, titles, captions, headers, footers, references.
 - `table`: table regions.
 - `formula`: displayed or inline formula regions.
-- `image`: image-like regions for a future vision service.
-- `chart`: chart regions for a future chart/vision service.
+- `image`: image-like regions for the optional vision service.
+- `chart`: chart regions for the optional vision service.
 - `none`: reserved for skipped blocks.
 
 ## Requested Formats
@@ -82,8 +82,8 @@ formats that are useful for final assembly:
 
 - `markdown` for text and tables.
 - `latex` for formulas.
-- `none` for image/chart regions until the future vision service contract is
-  defined.
+- `none` for image/chart regions; the vision worker decides the final Markdown
+  representation.
 
 This means the OCR worker should not decide the final representation by itself.
 The orchestrator requests the representation needed by the pipeline.
@@ -169,7 +169,7 @@ Formula blocks routed to OCR as LaTeX:
 | `formula_number` | `ocr` | `formula` | `latex` | `formula_number` |
 | `inline_formula` | `ocr` | `formula` | `latex` | `inline_formula` |
 
-Image-like blocks routed to the future vision service:
+Image-like blocks routed to the optional vision service:
 
 | Layout label | Target | Task | Format | Content role |
 | --- | --- | --- | --- | --- |
@@ -216,9 +216,9 @@ For that reason:
 image/chart/header_image/footer_image -> vision service
 ```
 
-The vision service is not implemented yet. The OCR stage records these blocks in
-`debug/vision_pending_manifest.json` so future assembly can keep them pending or
-emit placeholders in the final Markdown.
+The vision stage sends these blocks to the configured vision backend. If no
+backend is configured or ready, it records them in
+`debug/vision_pending_manifest.json` so assembly can keep them pending.
 
 ## OCR Direction
 
@@ -279,8 +279,8 @@ For Markdown output:
 - tables are inserted as Markdown tables;
 - formulas are inserted as LaTeX, either inline or display depending on
   `content_role`;
-- images and charts can be inserted as placeholders until the vision service is
-  implemented.
+- images and charts are inserted from normalized vision output when available,
+  or as placeholders when still pending.
 
 This is why routing preserves `content_role`: `text`, `caption`, `heading`,
 `footer`, and `reference` may all use OCR task `text`, but assembly treats them
@@ -294,5 +294,6 @@ differently.
   local tests.
 - GLM-OCR CPU inference is slow because OCR-routed crops are processed one at a
   time; batching, parallelism, or GPU execution are future performance work.
-- The vision service is not implemented yet. Image and chart crops are recorded
-  as pending.
+- The temporary `vision_llama` backend depends on an external multimodal
+  `llama-server`; if it is unavailable, image and chart crops are recorded as
+  pending.

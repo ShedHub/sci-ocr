@@ -168,11 +168,12 @@ def test_start_job_creates_layout_artifacts(tmp_path, monkeypatch) -> None:
     assert meta["stages"][1]["name"] == "layout"
     assert meta["stages"][2]["name"] == "layout_assets"
     assert meta["stages"][2]["crops"] == 4
-    assert meta["stages"][3]["name"] == "vision"
-    assert meta["stages"][3]["status"] == "pending"
-    assert meta["stages"][4]["name"] == "ocr"
-    assert meta["stages"][4]["blocks"] == 3
-    assert meta["stages"][4]["vision_pending_blocks"] == 1
+    assert meta["stages"][3]["name"] == "ocr"
+    assert meta["stages"][3]["blocks"] == 3
+    assert meta["stages"][3]["vision_pending_blocks"] == 1
+    assert meta["stages"][4]["name"] == "vision"
+    assert meta["stages"][4]["status"] == "pending"
+    assert meta["stages"][4]["blocks"] == 1
     assert meta["stages"][5]["name"] == "assembly"
     assert meta["stages"][5]["blocks"] == 4
     assert preparing["dpi"] == 400

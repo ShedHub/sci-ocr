@@ -25,6 +25,9 @@ models/ocr/*
 *.onnx
 *.pt
 
+# Local external tools
+local_tools/
+
 # OS
 .DS_Store
 Thumbs.db

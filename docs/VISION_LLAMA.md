@@ -1,0 +1,229 @@
+# Vision Llama Backend
+
+## Purpose
+
+`vision_llama` is the current temporary vision backend for SCI-OCR.
+
+It lets the pipeline process visual layout blocks before specialized image,
+chart, and diagram extractors exist.
+
+Pipeline position:
+
+```text
+PDF -> page rendering -> layout -> crops -> OCR + Vision -> assembly -> article.md
+```
+
+The layout stage may route image-like or chart-like blocks to `vision`.
+`vision_llama` receives each visual crop, sends it to a local multimodal
+`llama-server`, normalizes the response, and assembly inserts the Markdown into
+the final article.
+
+## Local Files
+
+The current local setup stores temporary binaries and model files inside the
+project folder, but outside Git.
+
+```text
+local_tools/
+  llama.cpp/
+    llama-server.exe
+
+models/
+  vision/
+    qwen3.6-27b/
+      Qwen3.6-27B-Q4_K_M.gguf
+      mmproj-F16.gguf
+```
+
+These paths are intentionally ignored by `.gitignore`.
+
+## Runtime Components
+
+There are two separate pieces:
+
+1. `llama-server`
+   - Runs on the Windows host.
+   - Loads the large GGUF model and mmproj file.
+   - Exposes an OpenAI-compatible endpoint at `http://127.0.0.1:8080`.
+
+2. `vision_llama`
+   - Runs as a Docker service.
+   - Exposes `GET /health`, `GET /ready`, and `POST /vision`.
+   - Calls host `llama-server` through `http://host.docker.internal:8080`.
+
+This split keeps the heavyweight temporary model runtime outside Docker while
+the pipeline keeps using normal HTTP service boundaries.
+
+## Start llama-server
+
+From the project root:
+
+```powershell
+.\scripts\run_vision_llama_server.ps1
+```
+
+Optional parameters:
+
+```powershell
+.\scripts\run_vision_llama_server.ps1 `
+  -Port 8080 `
+  -ContextSize 4096 `
+  -Threads 16
+```
+
+Check readiness:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8080/health
+```
+
+Expected response:
+
+```text
+status
+------
+ok
+```
+
+## Start Docker Services
+
+Build the affected services:
+
+```powershell
+docker compose build vision_llama orchestrator
+```
+
+Start the pipeline services:
+
+```powershell
+docker compose up -d layout_ppdoclayoutv3_cpu ocr_glm vision_llama orchestrator
+```
+
+Check readiness:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8004/ready
+Invoke-RestMethod http://127.0.0.1:8005/ready
+Invoke-RestMethod http://127.0.0.1:8006/ready
+Invoke-RestMethod http://127.0.0.1:8000/health
+```
+
+## Run A Full Pipeline Test
+
+Prepare a representative fixture:
+
+```powershell
+New-Item -ItemType Directory -Force jobs\input | Out-Null
+Copy-Item tests\fixtures\pdfs\science_mixed_content.pdf jobs\input\science_mixed_content.pdf -Force
+```
+
+Run the orchestrator:
+
+```powershell
+$body = @{
+  input_path = "/app/jobs/input/science_mixed_content.pdf"
+  dpi = 300
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/run `
+  -Method Post `
+  -ContentType "application/json" `
+  -Body $body
+```
+
+Inspect the output:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\report_job.py <job_id>
+```
+
+The validation report should show:
+
+```text
+vision: completed
+pending blocks: 0
+sources: GLM-OCR=..., qwen3.6-27b-q4_k_m=...
+```
+
+The assembled article is:
+
+```text
+jobs/output/<job_id>/output/article.md
+```
+
+## Prompt Behavior
+
+`vision_llama` prompts in English.
+
+The model is asked to classify the visual crop as one of:
+
+```text
+photo_or_illustration
+chart_or_plot
+diagram_or_flowchart
+table_like_visual
+unknown
+```
+
+Then it returns Markdown:
+
+- illustrations get a concise scientific description;
+- charts get axes, legend, trends, and approximate data tables when possible;
+- diagrams or flowcharts get Mermaid when possible;
+- unknown visuals get the best useful description plus uncertainty.
+
+The prompt includes `/no_think` and asks for concise output. This is important
+because the local Qwen model can spend a long time in reasoning mode if allowed
+to generate freely.
+
+## Artifacts
+
+When vision completes, the job contains:
+
+```text
+debug/vision_manifest.json
+debug/vision_raw_page_XXXX.json
+debug/vision_normalized_page_XXXX.json
+```
+
+When vision is not configured, unavailable, or times out, the job contains:
+
+```text
+debug/vision_pending_manifest.json
+```
+
+Assembly reads normalized vision output first. If no completed vision output
+exists for a visual block, assembly falls back to the pending manifest and emits
+a placeholder in `article.md`.
+
+## Known Limitations
+
+This backend is deliberately temporary.
+
+- It is slow on CPU-class local hardware. One visual crop can take several
+  minutes.
+- Chart data is approximate unless the values are printed clearly in the image.
+- Layout labels can be wrong. For example, PP-DocLayoutV3 may label an
+  illustration as `chart`. The prompt tells the model to classify from pixels,
+  but routing metadata can still bias the result.
+- Qwen may occasionally return empty final content after spending tokens in
+  thinking/reasoning. The adapter now treats empty content as `degraded` and
+  writes an explicit Markdown fallback instead of silently dropping the block.
+- There is no structured JSON chart extractor yet. Markdown is the current
+  normalized output for visual blocks.
+
+## Tested Run
+
+A full local run on `science_mixed_content.pdf` completed with:
+
+```text
+layout: completed, blocks=18, source=PP-DocLayoutV3
+ocr: completed, blocks=15, source=GLM-OCR
+vision: completed, blocks=3, source=qwen3.6-27b-q4_k_m
+assembly: completed, blocks=18
+pending blocks: 0
+```
+
+The bar chart was converted into Markdown with an extracted data table, and the
+line chart was converted into a trend description.

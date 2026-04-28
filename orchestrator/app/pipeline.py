@@ -12,6 +12,7 @@ This module is responsible only for high-level orchestration:
 - call the external layout service
 - create layout assets and routed crops
 - call the external OCR service for OCR-routed crops
+- call the optional external vision service for visual crops
 - assemble normalized artifacts into LLM-ready Markdown
 - return job_id
 
@@ -40,6 +41,7 @@ from orchestrator.app.layout_assets_stage import run_layout_assets_stage
 from orchestrator.app.layout_stage import run_layout_stage
 from orchestrator.app.ocr_stage import run_ocr_stage
 from orchestrator.app.preparing_for_layout import run_preparing_for_layout_stage
+from orchestrator.app.vision_stage import run_vision_stage
 
 
 def start_job(input_path: str, dpi: int = 300) -> str:
@@ -56,8 +58,9 @@ def start_job(input_path: str, dpi: int = 300) -> str:
     7. Run layout service stage
     8. Create layout-derived crops and overlays
     9. Run OCR service stage for OCR-routed crops
-    10. Assemble normalized artifacts into Markdown
-    11. Return job_id
+    10. Run optional vision service stage for visual crops
+    11. Assemble normalized artifacts into Markdown
+    12. Return job_id
     """
     # ---- 1. Validate input ----
     src = validate_input_file(input_path)
@@ -149,7 +152,19 @@ def start_job(input_path: str, dpi: int = 300) -> str:
     write_json(job_dir / "meta.json", meta)
     write_json(job_dir / "trace.json", trace)
 
-    # ---- 10. Assemble Markdown article for LLM consumption ----
+    # ---- 10. Run optional vision service stage for visual crops ----
+    run_vision_stage(
+        job_id=job_id,
+        document_id=copied_file.name,
+        paths=paths,
+        meta=meta,
+        trace=trace,
+        layout_asset_pages=layout_asset_pages,
+    )
+    write_json(job_dir / "meta.json", meta)
+    write_json(job_dir / "trace.json", trace)
+
+    # ---- 11. Assemble Markdown article for LLM consumption ----
     run_assembly_stage(
         job_id=job_id,
         paths=paths,

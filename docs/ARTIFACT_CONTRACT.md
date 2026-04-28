@@ -19,6 +19,7 @@ Current implemented scope:
 - Deterministic block routing rules for OCR and future vision stages
 - Service-ready OCR contract in stub-first form
 - GLM-OCR worker behind the shared OCR contract
+- Service-ready vision contract with a llama-server-backed adapter
 - Deterministic assembly into a content stream and Markdown output
 
 The core rule is that stage boundaries must stay stable. A backend such as
@@ -711,10 +712,86 @@ Example:
 }
 ```
 
+## Vision Service Contract
+
+### Service Role
+
+Vision is an optional external worker service. It receives one cropped visual
+block and returns Markdown-ready content for article assembly.
+
+The current backend is `vision_llama`, an adapter around a separately running
+multimodal `llama-server`. Later specialized image, chart, and diagram workers
+can replace or augment it behind the same contract.
+
+### Endpoints
+
+Required endpoints:
+
+- `GET /health` returns process liveness.
+- `GET /ready` returns backend readiness.
+- `POST /vision` runs visual analysis for one cropped block image.
+
+### Vision Request
+
+```json
+{
+  "job_id": "job-0001",
+  "document_id": "paper.pdf",
+  "page_number": 1,
+  "block_id": "p1_b4",
+  "block_type": "figure",
+  "layout_label": "chart",
+  "content_role": "chart",
+  "recognition_task": "chart",
+  "requested_format": "none",
+  "image_path": "/app/jobs/output/job-0001/assets/crops/page_0001/p1_b4.png",
+  "bbox": [100, 660, 900, 900],
+  "order": 4
+}
+```
+
+### Vision Response
+
+```json
+{
+  "status": "completed",
+  "job_id": "job-0001",
+  "page_number": 1,
+  "block_id": "p1_b4",
+  "content_role": "chart",
+  "recognition_task": "chart",
+  "visual_type": "chart_or_plot",
+  "format": "markdown",
+  "content": "Visual type: chart_or_plot\n\nThe chart shows...",
+  "structured_data": {},
+  "confidence": null,
+  "model": {
+    "name": "qwen3.6-27b-q4_k_m",
+    "version": "local-gguf",
+    "backend": "vision_llama"
+  },
+  "warnings": [],
+  "error": null,
+  "service_time_ms": 1234
+}
+```
+
+## Vision Artifacts
+
+Vision artifacts are stored per page when the optional backend completes:
+
+```text
+debug/vision_raw_page_0001.json
+debug/vision_normalized_page_0001.json
+debug/vision_manifest.json
+```
+
+Normalized vision artifacts are consumed by assembly before pending records.
+
 ## Vision Pending Manifest
 
-Image and chart blocks are not sent to OCR. Until the future vision service is
-implemented, the OCR stage writes:
+Image and chart blocks are not sent to OCR. If the vision backend is not
+configured or unavailable, the vision stage writes:
 
 ```text
 debug/vision_pending_manifest.json
@@ -746,7 +823,7 @@ Example:
     }
   ],
   "block_count": 1,
-  "reason": "vision service is not implemented yet"
+  "reason": "vision service is not configured"
 }
 ```
 
@@ -853,11 +930,14 @@ Included now:
 - configurable layout and OCR HTTP timeouts for CPU model workers
 - orchestrator OCR stage for OCR-routed crops
 - pending vision manifest for image/chart crops
+- optional vision HTTP stage for image/chart crops
+- normalized vision artifacts when the vision backend completes
 - deterministic orchestrator assembly stage and Markdown output
 
 Not included yet:
 
 - PP-DocLayoutV3 output quality validation on representative documents
 - broader quality validation of GLM-OCR output on representative documents
-- vision service
-- real OCR or vision-enriched assembly content
+- broader quality validation of `vision_llama` output on representative visual
+  crops
+- specialized chart extraction and diagram reconstruction backends

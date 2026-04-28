@@ -57,6 +57,15 @@ def load_ocr_blocks(paths: dict[str, Path]) -> dict[tuple[int, str], dict[str, A
     return ocr_blocks
 
 
+def load_vision_blocks(paths: dict[str, Path]) -> dict[tuple[int, str], dict[str, Any]]:
+    vision_blocks: dict[tuple[int, str], dict[str, Any]] = {}
+    for artifact_path in sorted(paths["debug_dir"].glob("vision_normalized_page_*.json")):
+        artifact = read_json(artifact_path)
+        for block in artifact.get("blocks", []):
+            vision_blocks[(block["page_number"], block["block_id"])] = block
+    return vision_blocks
+
+
 def load_crop_blocks(paths: dict[str, Path]) -> dict[tuple[int, str], dict[str, Any]]:
     manifest_path = paths["debug_dir"] / "layout_assets.json"
     if not manifest_path.is_file():
@@ -101,6 +110,7 @@ def build_missing_ocr_content(block_id: str) -> str:
 def build_content_stream(paths: dict[str, Path]) -> tuple[list[dict[str, Any]], list[str]]:
     layout_blocks = load_layout_blocks(paths)
     ocr_blocks = load_ocr_blocks(paths)
+    vision_blocks = load_vision_blocks(paths)
     crop_blocks = load_crop_blocks(paths)
     pending_vision = load_vision_pending_blocks(paths)
     stream: list[dict[str, Any]] = []
@@ -115,6 +125,7 @@ def build_content_stream(paths: dict[str, Path]) -> tuple[list[dict[str, Any]], 
         kind = infer_kind(layout_block, route)
         image_path = crop.get("image_path")
         ocr_block = ocr_blocks.get(key)
+        vision_block = vision_blocks.get(key)
 
         entry = {
             "page_number": layout_block["page_number"],
@@ -138,6 +149,21 @@ def build_content_stream(paths: dict[str, Path]) -> tuple[list[dict[str, Any]], 
                     "format": ocr_block.get("format"),
                     "content": ocr_block.get("content", ""),
                     "warnings": ocr_block.get("warnings", []),
+                }
+            )
+            continue
+
+        if vision_block is not None:
+            stream.append(
+                {
+                    **entry,
+                    "status": "completed",
+                    "source": vision_block.get("source", "vision"),
+                    "format": vision_block.get("format"),
+                    "content": vision_block.get("content", ""),
+                    "visual_type": vision_block.get("visual_type"),
+                    "structured_data": vision_block.get("structured_data", {}),
+                    "warnings": vision_block.get("warnings", []),
                 }
             )
             continue
@@ -209,6 +235,9 @@ def render_stream_entry(entry: dict[str, Any]) -> str:
 
     if entry.get("source") == "vision_pending":
         return f"> {content}"
+
+    if entry.get("target_service") == "vision":
+        return content
 
     if role in {"caption", "figure_title"}:
         return f"*{content}*"

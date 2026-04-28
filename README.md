@@ -5,7 +5,7 @@ Stub-first document processing pipeline.
 The project is being built around this flow:
 
 ```text
-Input -> Page Rendering -> Layout -> OCR -> Assembly -> Output
+Input -> Page Rendering -> Layout -> OCR + Vision -> Assembly -> Output
 ```
 
 ## Current Capabilities
@@ -34,7 +34,9 @@ The system currently supports:
 - GLM-OCR worker service with `GET /health`, `GET /ready`, and `POST /ocr`
 - HTTP OCR service calls for OCR-routed crops
 - raw and normalized OCR artifacts from the HTTP service boundary
-- pending vision manifest for image and chart blocks
+- optional llama-server-backed vision service for image and chart blocks
+- pending vision manifest when the vision backend is not configured or ready
+- raw and normalized vision artifacts from the HTTP service boundary
 - deterministic assembly stage that builds `content_stream.json` and
   `output/article.md` for LLM consumption
 - representative test PDF fixture generation for text, tables, formulas,
@@ -43,8 +45,12 @@ The system currently supports:
 
 Docker Compose points OCR requests at the GLM-OCR worker by default. The
 `ocr_stub` service remains available for fast local tests and contract
-development. Assembly is implemented as a deterministic orchestrator module, so
-its output is only as good as the upstream OCR and future vision/chart workers.
+development. Docker Compose also includes a `vision_llama` adapter that expects
+an external local `llama-server` with a multimodal GGUF model and mmproj file.
+If the vision backend is unavailable, visual blocks remain in
+`vision_pending_manifest.json` and the rest of the pipeline continues.
+Assembly is implemented as a deterministic orchestrator module, so its output
+is only as good as the upstream OCR and vision workers.
 A CPU PP-DocLayoutV3 service is present and preserves native model labels, but
 its output quality still needs manual end-to-end validation on representative
 PDFs before it is treated as stable.
@@ -60,7 +66,8 @@ sci-ocr/
 |       +-- preparing_for_layout.py # PDF-to-PNG rendering stage
 |       +-- layout_stage.py         # Local service-shaped layout stub stage
 |       +-- block_routing.py        # Layout block routing rules
-|       +-- ocr_stage.py            # OCR HTTP stage and vision pending manifest
+|       +-- ocr_stage.py            # OCR HTTP stage
+|       +-- vision_stage.py         # Optional vision HTTP stage
 |       +-- assembly_stage.py       # Content stream and Markdown assembly
 |       +-- schemas.py              # API request/response models
 |       +-- config.py               # Path configuration
@@ -72,11 +79,13 @@ sci-ocr/
 |   +-- layout_ppdoclayoutv3_cpu/  # CPU PP-DocLayoutV3 service
 |   +-- ocr_stub/                  # OCR service placeholder
 |   +-- ocr_glm/                   # GLM-OCR worker service
+|   +-- vision_llama/              # llama-server-backed vision adapter
 |   +-- assembly_stub/             # Assembly service placeholder
 +-- shared/
 |   +-- contracts/                 # Shared service boundary schemas
 |       +-- layout.py
 |       +-- ocr.py
+|       +-- vision.py
 +-- models/                       # Local model folders; weights ignored by Git
 +-- docs/
 +-- scripts/
@@ -149,26 +158,46 @@ uses `http://127.0.0.1:8002`, which is convenient for local `ocr_stub` runs.
 Docker Compose points it at `ocr_glm`. The GLM worker expects the local model
 folder mounted at `/models/ocr/glm-ocr`.
 
+The orchestrator reads optional `VISION_SERVICE_URL` from the environment. If
+omitted, image and chart blocks stay in `vision_pending_manifest.json`.
+
 Current real layout inference is CPU-only. A separate GPU layout container will
 be added later, with orchestrator-level service selection through environment
 configuration.
 
-### Docker Compose With Real Layout And OCR
+### Docker Compose With Real Layout, OCR, And Optional Vision
 
-Docker Compose runs the real CPU layout service and the GLM-OCR worker by
-default:
+Docker Compose runs the real CPU layout service, the GLM-OCR worker, and the
+`vision_llama` adapter by default:
 
 ```powershell
-docker compose build ocr_glm orchestrator
-docker compose up -d layout_ppdoclayoutv3_cpu ocr_glm orchestrator
+docker compose build layout_ppdoclayoutv3_cpu ocr_glm vision_llama orchestrator
+docker compose up -d layout_ppdoclayoutv3_cpu ocr_glm vision_llama orchestrator
+```
+
+For visual blocks, start `llama-server` on the host first. Replace the paths
+with your local GGUF and mmproj files:
+
+```powershell
+llama-server `
+  -m C:\models\qwen3.6-27b-q4_k_m.gguf `
+  --mmproj C:\models\qwen3.6-27b-mmproj.gguf `
+  --host 127.0.0.1 `
+  --port 8080 `
+  -c 4096
 ```
 
 Check service readiness:
 
 ```powershell
 Invoke-RestMethod http://127.0.0.1:8005/ready
+Invoke-RestMethod http://127.0.0.1:8006/ready
 Invoke-RestMethod http://127.0.0.1:8000/health
 ```
+
+`vision_llama` calls `http://host.docker.internal:8080` from Docker Compose.
+If `llama-server` is not running, visual blocks remain pending instead of
+failing the whole job.
 
 Run the compact fixture through the full pipeline:
 
@@ -212,6 +241,7 @@ Real CPU inference is much slower than the stubs. Docker Compose sets:
 ```text
 LAYOUT_TIMEOUT_SECONDS=120
 OCR_TIMEOUT_SECONDS=600
+VISION_TIMEOUT_SECONDS=1200
 ```
 
 The compact one-page fixture currently takes several minutes on CPU because OCR
@@ -278,6 +308,9 @@ jobs/output/<job_id>/
 |   +-- ocr_manifest.json
 |   +-- ocr_raw_page_0001.json
 |   +-- ocr_normalized_page_0001.json
+|   +-- vision_manifest.json              # when vision completes
+|   +-- vision_raw_page_0001.json         # when vision completes
+|   +-- vision_normalized_page_0001.json  # when vision completes
 |   +-- vision_pending_manifest.json
 |   +-- content_stream.json
 |   +-- assembly_manifest.json
@@ -309,7 +342,7 @@ The report includes:
 - canonical type and native `layout_label` summaries
 - crop routing split between OCR and future vision
 - OCR task and output format summaries
-- pending vision block summaries
+- completed and pending vision block summaries
 - assembly source/status summaries
 - paths to rendered pages, overlays, crops, debug artifacts, and Markdown output
 
@@ -334,7 +367,9 @@ API request
 -> check HTTP OCR service readiness
 -> call HTTP OCR service for text/table/formula crops
 -> write raw and normalized OCR artifacts
--> write pending vision manifest for image/chart crops
+-> call optional HTTP vision service for image/chart crops
+-> write raw and normalized vision artifacts when vision completes
+-> write pending vision manifest when vision is unavailable
 -> assemble article reading order into debug/content_stream.json
 -> render output/article.md for downstream LLM analysis
 -> update meta.json, trace.json, and logs.jsonl
@@ -351,12 +386,13 @@ It maps layout blocks to the downstream worker that should process them next:
 text-like blocks -> OCR -> markdown
 tables           -> OCR -> markdown
 formulas         -> OCR -> latex
-images/charts    -> future vision service
+images/charts    -> optional vision service
 ```
 
 This module is deliberately deterministic and model-free. The OCR stage consumes
 its decisions and sends only OCR-routed crops to the configured OCR worker.
-Images and charts are recorded as pending for a separate future service.
+The vision stage consumes image and chart crops when a vision backend is
+configured; otherwise those blocks remain pending.
 
 Detailed routing rules are documented in `docs/BLOCK_ROUTING.md`.
 
@@ -386,12 +422,30 @@ table   -> Table Recognition:
 formula -> Formula Recognition:
 ```
 
+## Vision Backend
+
+The vision boundary is implemented through `shared/contracts/vision.py`.
+
+The current `services/vision_llama` backend is an adapter around a separately
+running multimodal `llama-server`. It sends one cropped image/chart block at a
+time with an English prompt. The prompt asks the model to classify the visual
+block as an illustration, chart/plot, diagram/flowchart, table-like visual, or
+unknown.
+
+For illustrations, the model returns a detailed Markdown description. For
+charts, it returns axes, legend, trends, and approximate data as a Markdown
+table when possible. For diagrams or flowcharts, it returns Mermaid when
+possible. Assembly inserts the normalized vision response into `article.md`.
+
+If `VISION_SERVICE_URL` is not set, or the backend is unavailable, visual
+blocks are written to `vision_pending_manifest.json` and the pipeline continues.
+
 ## Assembly
 
 The assembly stage lives in `orchestrator/app/assembly_stage.py`.
 
-It reads normalized layout, normalized OCR, and pending vision artifacts, then
-builds a linear `debug/content_stream.json` sorted by:
+It reads normalized layout, normalized OCR, normalized vision, and pending
+vision artifacts, then builds a linear `debug/content_stream.json` sorted by:
 
 ```text
 page_number -> order -> bbox top -> bbox left -> block_id
@@ -400,11 +454,14 @@ page_number -> order -> bbox top -> bbox left -> block_id
 The content stream is the machine-readable representation of the reconstructed
 article. `output/article.md` is rendered from that stream for LLM analysis.
 Text and tables are inserted as Markdown, formulas are inserted as LaTeX, and
-image/chart blocks are represented as pending placeholders until a vision
-service provides descriptions and chart data.
+completed image/chart blocks are inserted from vision output. Unprocessed
+visual blocks are represented as pending placeholders.
 
 Detailed assembly design and validation notes are documented in
 `docs/ASSEMBLY.md`.
+
+Detailed setup and troubleshooting for the temporary local vision backend are
+documented in `docs/VISION_LLAMA.md`.
 
 ## Current Limitations
 
@@ -415,10 +472,9 @@ Detailed assembly design and validation notes are documented in
 - Real GLM-OCR CPU inference is slow because OCR-routed crops are processed
   sequentially; batching, parallelism, and/or GPU execution are future
   performance work.
-- Assembly currently uses deterministic rules and placeholder OCR/vision
-  content; it does not repair multi-column reading order or merge broken
-  paragraphs beyond the order exposed by layout.
-- The vision service for images and charts is not implemented yet; routed
-  image/chart crops are written to `vision_pending_manifest.json`.
+- `vision_llama` depends on an external multimodal `llama-server`; on CPU-only
+  hardware it can be slow and chart data extraction may be approximate.
+- Assembly currently uses deterministic rules and does not repair multi-column
+  reading order or merge broken paragraphs beyond the order exposed by layout.
 - A separate GPU layout container and orchestrator backend switch are planned
   for the future.

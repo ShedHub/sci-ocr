@@ -5,7 +5,7 @@
 SCI-OCR is a modular document processing pipeline.
 
 ```text
-Input -> Page Rendering -> Layout -> OCR -> Assembly -> Output
+Input -> Page Rendering -> Layout -> OCR + Vision -> Assembly -> Output
 ```
 
 The current implementation focuses on the foundation:
@@ -17,6 +17,7 @@ The current implementation focuses on the foundation:
 - HTTP-backed stub-first service boundaries
 - deterministic block routing rules for OCR and future vision workers
 - OCR HTTP boundary with contract-compatible stub and GLM-OCR workers
+- optional vision HTTP boundary with a llama-server-backed adapter
 
 ## Orchestrator
 
@@ -31,7 +32,8 @@ The orchestrator owns high-level pipeline flow:
 - normalize service output for downstream stages
 - route layout blocks to the next worker service
 - call the OCR service for OCR-routed crops
-- write a pending vision manifest for image and chart crops
+- call the optional vision service for image and chart crops
+- write a pending vision manifest when the vision backend is unavailable
 - assemble normalized artifacts into a content stream and Markdown output
 
 The orchestrator must not contain model-specific inference logic.
@@ -61,13 +63,13 @@ Current routing direction:
 text-like blocks -> OCR service -> markdown
 table blocks     -> OCR service -> markdown
 formula blocks   -> OCR service -> latex
-image/chart      -> future vision service
+image/chart      -> optional vision service
 ```
 
 The OCR stage consumes these routing decisions. It sends only OCR-routed crops
 to the configured OCR worker. Image and chart crops are not sent to OCR; they
-are written to `debug/vision_pending_manifest.json` until the future vision
-service exists.
+are handled by the optional vision stage or written to
+`debug/vision_pending_manifest.json` when no vision backend is available.
 
 Detailed routing rules are documented in `docs/BLOCK_ROUTING.md`.
 
@@ -244,7 +246,9 @@ Orchestrator owns:
 - routing blocks to OCR or future vision pipelines
 - OCR request orchestration
 - raw and normalized OCR artifact persistence
-- pending manifest persistence for future vision blocks
+- vision request orchestration
+- raw and normalized vision artifact persistence
+- pending manifest persistence for unprocessed vision blocks
 
 Routing module owns:
 
@@ -260,17 +264,29 @@ OCR service owns:
 - recognizing formula block crops as LaTeX
 - reporting model metadata and service warnings
 
-Future vision service owns:
+Vision service owns:
 
 - processing image, figure, and chart block crops
-- returning visual descriptions, chart extraction, or Markdown placeholders
+- returning visual descriptions, chart extraction, Mermaid diagrams, or
+  Markdown placeholders
+
+Current temporary vision backend:
+
+- `services/vision_llama` exposes `GET /health`, `GET /ready`, and
+  `POST /vision`.
+- It calls a separately running multimodal `llama-server` through its
+  OpenAI-compatible chat completions endpoint.
+- It prompts in English to classify visual blocks, describe illustrations,
+  extract approximate chart data, and return Mermaid for diagrams when possible.
+- If the backend is not configured or not ready, the orchestrator leaves visual
+  blocks pending rather than failing the pipeline.
 
 ## Assembly Stage
 
 Assembly is currently an orchestrator module, not a separate worker. It is
 deterministic and model-free: it reads normalized layout artifacts, normalized
-OCR artifacts, and pending or future vision artifacts, then builds a linear
-article content stream.
+OCR artifacts, normalized vision artifacts, and pending vision artifacts, then
+builds a linear article content stream.
 
 The content stream is written to:
 
@@ -312,3 +328,12 @@ OCR follows the same stub-first strategy:
 4. Persist raw and normalized OCR artifacts.
 5. Replace Docker Compose OCR traffic with a GLM-OCR-compatible worker behind
    the same contract.
+
+Vision follows the same replacement strategy:
+
+1. Define the shared vision contract.
+2. Implement a llama-server-backed adapter behind `POST /vision`.
+3. Make the orchestrator call the vision service for routed visual crops.
+4. Persist raw and normalized vision artifacts.
+5. Later replace or augment the adapter with specialized image, chart, and
+   diagram workers without changing assembly.

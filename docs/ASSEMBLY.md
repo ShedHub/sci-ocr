@@ -34,6 +34,7 @@ Assembly reads these job artifacts:
 debug/layout_normalized_page_XXXX.json
 debug/ocr_normalized_page_XXXX.json
 debug/layout_assets.json
+debug/vision_normalized_page_XXXX.json
 debug/vision_pending_manifest.json
 ```
 
@@ -52,8 +53,10 @@ OCR provides text content for OCR-routed blocks:
 - tables as Markdown
 - formulas as LaTeX
 
-Vision is not implemented yet. Until it exists, image and chart blocks enter
-assembly as pending records from `vision_pending_manifest.json`.
+Vision is optional. When `vision_llama` or another vision backend completes,
+image and chart blocks enter assembly through normalized vision artifacts. When
+vision is not configured or unavailable, those blocks enter assembly as pending
+records from `vision_pending_manifest.json`.
 
 ## Content Stream
 
@@ -95,7 +98,7 @@ Important fields:
 - `kind` describes the content family, for example `text`, `table`, `formula`,
   `image`, or `chart`.
 - `source` records where content came from, such as `ocr_stub`,
-  `vision_pending`, or a future real OCR/vision worker.
+  `vision_llama`, `vision_pending`, or a future real OCR/vision worker.
 - `status` is `completed`, `pending`, or `missing`.
 
 ## Ordering
@@ -137,6 +140,7 @@ Current rendering rules:
 | display `formula` | fenced LaTeX block using `$$` |
 | `inline_formula` | inline LaTeX using `$...$` |
 | `caption` | italic Markdown |
+| completed `chart` / `image` | Markdown from vision worker |
 | pending `chart` | blockquote placeholder |
 | pending `image` | blockquote placeholder |
 
@@ -160,7 +164,7 @@ $$
 *OCR stub text for p2_b4*
 ```
 
-With future real OCR and vision, the same position in the article should become:
+With real OCR and vision, the same position in the article should become:
 
 ```markdown
 ## Methods
