@@ -8,14 +8,24 @@ for the future vision service.
 
 from datetime import UTC, datetime
 from pathlib import Path
-from time import perf_counter
+from time import perf_counter, sleep
 
 import httpx
 
-from orchestrator.app.config import OCR_SERVICE_URL, OCR_TIMEOUT_SECONDS
+from orchestrator.app.config import (
+    OCR_ASYNC_ENABLED,
+    OCR_JOB_HTTP_TIMEOUT_SECONDS,
+    OCR_JOB_MAX_RUNTIME_SECONDS,
+    OCR_JOB_POLL_INTERVAL_SECONDS,
+    OCR_JOB_STALL_TIMEOUT_SECONDS,
+    OCR_SERVICE_URL,
+    OCR_TIMEOUT_SECONDS,
+)
 from orchestrator.app.job_metadata import append_log_line, write_json
 from shared.contracts.ocr import (
     NormalizedOcrArtifact,
+    OcrJobStartResponse,
+    OcrJobStatusResponse,
     OcrReadyResponse,
     OcrRequest,
     OcrResponse,
@@ -134,6 +144,135 @@ def call_ocr_service(
     return payload
 
 
+def start_ocr_job(
+    request: dict,
+    ocr_service_url: str = OCR_SERVICE_URL,
+    timeout: float = OCR_JOB_HTTP_TIMEOUT_SECONDS,
+) -> dict:
+    jobs_url = f"{ocr_service_url.rstrip('/')}/ocr/jobs"
+
+    try:
+        response = httpx.post(
+            jobs_url,
+            json=request,
+            timeout=timeout,
+            trust_env=False,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        validated = OcrJobStartResponse.model_validate(payload)
+    except httpx.HTTPStatusError as exc:
+        raise OcrServiceError(
+            f"OCR async job start for block {request.get('block_id')} failed "
+            f"with HTTP {exc.response.status_code}: {exc.response.text}"
+        ) from exc
+    except httpx.RequestError as exc:
+        raise OcrServiceError(
+            f"OCR async job start failed for block {request.get('block_id')} "
+            f"at {jobs_url}: {exc}"
+        ) from exc
+    except ValueError as exc:
+        raise OcrServiceError(
+            f"OCR async job start response for block {request.get('block_id')} "
+            f"is not valid JSON: {exc}"
+        ) from exc
+
+    return validated.model_dump()
+
+
+def get_ocr_job_status(
+    task_id: str,
+    ocr_service_url: str = OCR_SERVICE_URL,
+    timeout: float = OCR_JOB_HTTP_TIMEOUT_SECONDS,
+) -> dict:
+    status_url = f"{ocr_service_url.rstrip('/')}/ocr/jobs/{task_id}"
+
+    try:
+        response = httpx.get(status_url, timeout=timeout, trust_env=False)
+        response.raise_for_status()
+        payload = response.json()
+        validated = OcrJobStatusResponse.model_validate(payload)
+    except httpx.HTTPStatusError as exc:
+        raise OcrServiceError(
+            f"OCR async job status request for task {task_id} failed with HTTP "
+            f"{exc.response.status_code}: {exc.response.text}"
+        ) from exc
+    except httpx.RequestError as exc:
+        raise OcrServiceError(
+            f"OCR async job status request failed for task {task_id} "
+            f"at {status_url}: {exc}"
+        ) from exc
+    except ValueError as exc:
+        raise OcrServiceError(
+            f"OCR async job status response for task {task_id} is not valid JSON: {exc}"
+        ) from exc
+
+    return validated.model_dump()
+
+
+def parse_iso_datetime(value: str) -> datetime:
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+def seconds_since(value: str) -> float:
+    heartbeat = parse_iso_datetime(value)
+    if heartbeat.tzinfo is None:
+        heartbeat = heartbeat.replace(tzinfo=UTC)
+    return max(0.0, (datetime.now(UTC) - heartbeat).total_seconds())
+
+
+def wait_for_ocr_job(
+    task_id: str,
+    request: dict,
+    ocr_service_url: str = OCR_SERVICE_URL,
+    poll_interval: float = OCR_JOB_POLL_INTERVAL_SECONDS,
+    stall_timeout: float = OCR_JOB_STALL_TIMEOUT_SECONDS,
+    max_runtime: float = OCR_JOB_MAX_RUNTIME_SECONDS,
+) -> dict:
+    started = perf_counter()
+
+    while True:
+        status = get_ocr_job_status(task_id, ocr_service_url)
+        state = status["status"]
+
+        if state == "completed":
+            return OcrResponse.model_validate(status["result"]).model_dump()
+
+        if state in {"failed", "stalled"}:
+            raise OcrServiceError(
+                f"OCR async job {task_id} for block {request.get('block_id')} "
+                f"ended with status {state}: {status.get('error') or status.get('message')}"
+            )
+
+        heartbeat_age = seconds_since(status["last_heartbeat_at"])
+        if heartbeat_age > stall_timeout:
+            raise OcrServiceError(
+                f"OCR async job {task_id} for block {request.get('block_id')} "
+                f"appears stalled: last heartbeat was {heartbeat_age:.1f}s ago "
+                f"at stage {status.get('stage')}"
+            )
+
+        elapsed = perf_counter() - started
+        if max_runtime > 0 and elapsed > max_runtime:
+            raise OcrServiceError(
+                f"OCR async job {task_id} for block {request.get('block_id')} "
+                f"exceeded max runtime of {max_runtime:.1f}s"
+            )
+
+        sleep(poll_interval)
+
+
+def call_ocr_block(
+    request: dict,
+    ocr_service_url: str = OCR_SERVICE_URL,
+) -> dict:
+    if not OCR_ASYNC_ENABLED:
+        return call_ocr_service(request, ocr_service_url)
+
+    job = start_ocr_job(request, ocr_service_url)
+    return wait_for_ocr_job(job["task_id"], request, ocr_service_url)
+
+
 def normalize_ocr_response(raw: dict, request: dict) -> dict:
     raw = OcrResponse.model_validate(raw).model_dump()
     source = raw["model"]["name"]
@@ -239,7 +378,7 @@ def run_ocr_stage(
                 document_id=document_id,
                 crop=crop,
             )
-            raw = call_ocr_service(request, service_url)
+            raw = call_ocr_block(request, service_url)
             normalized = normalize_ocr_response(raw, request)
 
             page_number = crop["page_number"]

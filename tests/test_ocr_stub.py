@@ -1,4 +1,5 @@
 import sys
+from time import sleep
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -60,3 +61,28 @@ def test_ocr_stub_exposes_health_ready_and_ocr_endpoints(tmp_path) -> None:
     assert ready.json()["status"] == "ready"
     assert ocr.status_code == 200
     assert ocr.json()["recognition_task"] == "text"
+
+
+def test_ocr_stub_exposes_async_job_endpoints(tmp_path) -> None:
+    client = TestClient(app)
+    request = build_request(tmp_path, "text", "markdown")
+
+    started = client.post("/ocr/jobs", json=request.model_dump())
+
+    assert started.status_code == 200
+    task_id = started.json()["task_id"]
+
+    status = None
+    for _ in range(20):
+        status = client.get(f"/ocr/jobs/{task_id}")
+        assert status.status_code == 200
+        if status.json()["status"] == "completed":
+            break
+        sleep(0.01)
+
+    assert status is not None
+    payload = status.json()
+    assert payload["status"] == "completed"
+    assert payload["stage"] == "completed"
+    assert payload["result"]["recognition_task"] == "text"
+    assert payload["result"]["content"]

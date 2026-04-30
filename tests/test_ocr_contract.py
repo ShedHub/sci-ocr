@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from shared.contracts.ocr import OcrRequest, OcrResponse
+from shared.contracts.ocr import OcrJobStartResponse, OcrJobStatusResponse, OcrRequest, OcrResponse
 
 
 def valid_ocr_request() -> dict:
@@ -71,3 +71,55 @@ def test_failed_ocr_response_requires_error() -> None:
 
     with pytest.raises(ValidationError):
         OcrResponse.model_validate(payload)
+
+
+def test_ocr_job_start_response_accepts_contract_shape() -> None:
+    response = OcrJobStartResponse.model_validate(
+        {
+            "status": "queued",
+            "task_id": "task-1",
+            "job_id": "job-1",
+            "page_number": 1,
+            "block_id": "p1_b1",
+            "submitted_at": "2026-04-30T12:00:00+00:00",
+        }
+    )
+
+    assert response.task_id == "task-1"
+
+
+def test_completed_ocr_job_status_requires_result() -> None:
+    payload = {
+        "task_id": "task-1",
+        "status": "completed",
+        "stage": "completed",
+        "job_id": "job-1",
+        "page_number": 1,
+        "block_id": "p1_b1",
+        "submitted_at": "2026-04-30T12:00:00+00:00",
+        "last_heartbeat_at": "2026-04-30T12:00:01+00:00",
+        "elapsed_seconds": 1,
+    }
+
+    with pytest.raises(ValidationError):
+        OcrJobStatusResponse.model_validate(payload)
+
+
+def test_running_ocr_job_status_accepts_heartbeat() -> None:
+    response = OcrJobStatusResponse.model_validate(
+        {
+            "task_id": "task-1",
+            "status": "running",
+            "stage": "generating",
+            "job_id": "job-1",
+            "page_number": 1,
+            "block_id": "p1_b1",
+            "submitted_at": "2026-04-30T12:00:00+00:00",
+            "started_at": "2026-04-30T12:00:00+00:00",
+            "last_heartbeat_at": "2026-04-30T12:00:01+00:00",
+            "elapsed_seconds": 1.0,
+            "message": "model.generate is still running",
+        }
+    )
+
+    assert response.status == "running"

@@ -565,6 +565,9 @@ Required endpoints:
 - `GET /health` returns process liveness.
 - `GET /ready` returns model/backend readiness.
 - `POST /ocr` runs recognition for one cropped block image.
+- `POST /ocr/jobs` starts recognition asynchronously and returns a task id.
+- `GET /ocr/jobs/{task_id}` returns async job status, heartbeat, and final
+  result when complete.
 
 ### OCR Request
 
@@ -665,6 +668,45 @@ Status values:
 
 The response shape is validated by shared Pydantic schemas in
 `shared/contracts/ocr.py`.
+
+### Async OCR Job Status
+
+The async OCR path avoids a single long HTTP request for CPU-bound model
+inference. `POST /ocr/jobs` accepts the same request body as `POST /ocr` and
+returns:
+
+```json
+{
+  "status": "queued",
+  "task_id": "2b0f...",
+  "job_id": "job-0001",
+  "page_number": 1,
+  "block_id": "p1_b2",
+  "submitted_at": "2026-04-30T12:00:00+00:00"
+}
+```
+
+`GET /ocr/jobs/{task_id}` returns:
+
+```json
+{
+  "task_id": "2b0f...",
+  "status": "running",
+  "stage": "generating",
+  "job_id": "job-0001",
+  "page_number": 1,
+  "block_id": "p1_b2",
+  "submitted_at": "2026-04-30T12:00:00+00:00",
+  "started_at": "2026-04-30T12:00:01+00:00",
+  "last_heartbeat_at": "2026-04-30T12:05:00+00:00",
+  "elapsed_seconds": 299.0,
+  "message": "GLM-OCR model.generate is still running"
+}
+```
+
+Supported async states are `queued`, `running`, `completed`, `failed`, and
+`stalled`. On completion, the status response includes the normal `OcrResponse`
+as `result`.
 
 ## OCR Artifacts
 
@@ -948,6 +990,7 @@ Included now:
 - block routing rules for OCR and vision services
 - OCR service contract and OCR stub
 - GLM-OCR worker wired into Docker Compose
+- async OCR job endpoints with heartbeat polling for long CPU inference
 - configurable layout and OCR HTTP timeouts for CPU model workers
 - orchestrator OCR stage for OCR-routed crops
 - pending vision manifest for image/chart crops

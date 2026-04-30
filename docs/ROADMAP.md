@@ -28,6 +28,8 @@
 - Verify a full Docker Compose run with PP-DocLayoutV3 and GLM-OCR on
   `formula_table_fixture.pdf`
 - Add configurable layout and OCR HTTP timeouts for CPU model workers
+- Add async OCR job endpoints and orchestrator polling with heartbeat-based
+  stall detection
 - Add a shared vision contract, optional vision stage, and llama-server-backed
   `vision_llama` adapter for image/chart crops
 - Insert completed vision Markdown into assembled `article.md`, with pending
@@ -46,6 +48,8 @@
   diagrams
 - Improve OCR throughput with batching, parallel crop processing, or GPU
   execution
+- Add token-level OCR generation progress or partial output streaming if the
+  GLM-OCR/Transformers runtime supports it cleanly
 - Add a future layout worker-pool launcher/orchestrator path for high-core
   machines. See `docs/LAYOUT_SCALING.md`.
 - Replace or augment the temporary llama-server vision backend with specialized

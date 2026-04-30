@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 
 OcrStatus = Literal["completed", "degraded", "failed"]
+OcrJobStatus = Literal["queued", "running", "completed", "failed", "stalled"]
 OcrRecognitionTask = Literal["text", "table", "formula"]
 OcrOutputFormat = Literal["markdown", "latex"]
 
@@ -90,6 +91,45 @@ class OcrResponse(BaseModel):
             raise ValueError("failed OCR responses must include error")
         if self.status in {"completed", "degraded"} and self.error is not None:
             raise ValueError("successful OCR responses must not include error")
+        return self
+
+
+class OcrJobStartResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["queued"]
+    task_id: str = Field(min_length=1)
+    job_id: str = Field(min_length=1)
+    page_number: int = Field(ge=1)
+    block_id: str = Field(min_length=1)
+    submitted_at: str = Field(min_length=1)
+
+
+class OcrJobStatusResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    task_id: str = Field(min_length=1)
+    status: OcrJobStatus
+    stage: str = Field(min_length=1)
+    job_id: str = Field(min_length=1)
+    document_id: str | None = None
+    page_number: int = Field(ge=1)
+    block_id: str = Field(min_length=1)
+    started_at: str | None = None
+    submitted_at: str = Field(min_length=1)
+    completed_at: str | None = None
+    last_heartbeat_at: str = Field(min_length=1)
+    elapsed_seconds: float = Field(ge=0)
+    message: str = ""
+    result: OcrResponse | None = None
+    error: str | None = None
+
+    @model_validator(mode="after")
+    def validate_terminal_payload(self):
+        if self.status == "completed" and self.result is None:
+            raise ValueError("completed OCR jobs must include result")
+        if self.status in {"failed", "stalled"} and not self.error:
+            raise ValueError("failed or stalled OCR jobs must include error")
         return self
 
 

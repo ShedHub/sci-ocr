@@ -1,4 +1,5 @@
 import sys
+from time import sleep
 from pathlib import Path
 
 
@@ -54,3 +55,21 @@ def test_glm_formula_output_strips_display_wrappers(tmp_path, monkeypatch) -> No
     response = service.run_ocr(build_request(tmp_path, "formula", "latex"))
 
     assert response.content == "F_1 = \\frac{2PR}{P + R}"
+
+
+def test_glm_async_job_wraps_existing_ocr_flow(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(service, "generate_content", lambda image_path, request: "recognized")
+    started = service.start_ocr_job(build_request(tmp_path, "text", "markdown"))
+
+    status = None
+    for _ in range(50):
+        status = service.get_ocr_job_status(started.task_id)
+        if status.status == "completed":
+            break
+        sleep(0.01)
+
+    assert status is not None
+    assert status.status == "completed"
+    assert status.stage == "completed"
+    assert status.result is not None
+    assert status.result.content == "recognized"

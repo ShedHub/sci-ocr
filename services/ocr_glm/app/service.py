@@ -1,9 +1,19 @@
 import os
+from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime
 from pathlib import Path
+from threading import Event, Lock, Thread
 from time import perf_counter
 from typing import Any
+from uuid import uuid4
 
-from shared.contracts.ocr import OcrReadyResponse, OcrRequest, OcrResponse
+from shared.contracts.ocr import (
+    OcrJobStartResponse,
+    OcrJobStatusResponse,
+    OcrReadyResponse,
+    OcrRequest,
+    OcrResponse,
+)
 
 
 SERVICE_NAME = "ocr_glm"
@@ -28,10 +38,21 @@ REQUIRED_MODEL_FILES = (
 _processor = None
 _model = None
 _torch = None
+_jobs: dict[str, dict[str, Any]] = {}
+_jobs_lock = Lock()
+_executor = ThreadPoolExecutor(max_workers=int(os.getenv("OCR_JOB_MAX_WORKERS", "1")))
 
 
 class GlmOcrUnavailable(RuntimeError):
     """Raised when the local GLM-OCR runtime or model files are not ready."""
+
+
+def utc_now() -> str:
+    return datetime.now(UTC).isoformat()
+
+
+def get_job_heartbeat_interval_seconds() -> float:
+    return float(os.getenv("OCR_JOB_HEARTBEAT_INTERVAL_SECONDS", "15"))
 
 
 def get_model_dir() -> Path:
@@ -227,3 +248,120 @@ def run_ocr(request: OcrRequest) -> OcrResponse:
         error=None,
         service_time_ms=int((perf_counter() - started) * 1000),
     )
+
+
+def _elapsed_seconds(job: dict[str, Any]) -> float:
+    start = job.get("started_perf") or job["submitted_perf"]
+    end = job.get("completed_perf") or perf_counter()
+    return max(0.0, end - start)
+
+
+def _job_status_response(task_id: str, job: dict[str, Any]) -> OcrJobStatusResponse:
+    return OcrJobStatusResponse(
+        task_id=task_id,
+        status=job["status"],
+        stage=job["stage"],
+        job_id=job["request"].job_id,
+        document_id=job["request"].document_id,
+        page_number=job["request"].page_number,
+        block_id=job["request"].block_id,
+        submitted_at=job["submitted_at"],
+        started_at=job.get("started_at"),
+        completed_at=job.get("completed_at"),
+        last_heartbeat_at=job["last_heartbeat_at"],
+        elapsed_seconds=_elapsed_seconds(job),
+        message=job.get("message", ""),
+        result=job.get("result"),
+        error=job.get("error"),
+    )
+
+
+def _set_job(task_id: str, **updates: Any) -> None:
+    with _jobs_lock:
+        _jobs[task_id].update(updates)
+
+
+def _heartbeat_until_stopped(task_id: str, stop_event: Event) -> None:
+    interval = get_job_heartbeat_interval_seconds()
+    while not stop_event.wait(interval):
+        _set_job(
+            task_id,
+            last_heartbeat_at=utc_now(),
+            message="GLM-OCR model.generate is still running",
+        )
+
+
+def _run_job(task_id: str) -> None:
+    _set_job(
+        task_id,
+        status="running",
+        stage="generating",
+        started_at=utc_now(),
+        started_perf=perf_counter(),
+        last_heartbeat_at=utc_now(),
+        message="GLM-OCR generation started",
+    )
+    stop_event = Event()
+    ticker = Thread(target=_heartbeat_until_stopped, args=(task_id, stop_event), daemon=True)
+    ticker.start()
+    try:
+        with _jobs_lock:
+            request = _jobs[task_id]["request"]
+        result = run_ocr(request)
+        stop_event.set()
+        _set_job(
+            task_id,
+            status="completed",
+            stage="completed",
+            completed_at=utc_now(),
+            completed_perf=perf_counter(),
+            last_heartbeat_at=utc_now(),
+            message="GLM-OCR generation completed",
+            result=result,
+        )
+    except Exception as exc:
+        stop_event.set()
+        _set_job(
+            task_id,
+            status="failed",
+            stage="failed",
+            completed_at=utc_now(),
+            completed_perf=perf_counter(),
+            last_heartbeat_at=utc_now(),
+            message="GLM-OCR generation failed",
+            error=str(exc),
+        )
+
+
+def start_ocr_job(request: OcrRequest) -> OcrJobStartResponse:
+    task_id = str(uuid4())
+    now = utc_now()
+    with _jobs_lock:
+        _jobs[task_id] = {
+            "request": request,
+            "status": "queued",
+            "stage": "queued",
+            "submitted_at": now,
+            "submitted_perf": perf_counter(),
+            "last_heartbeat_at": now,
+            "message": "OCR job queued",
+        }
+
+    _executor.submit(_run_job, task_id)
+    return OcrJobStartResponse(
+        status="queued",
+        task_id=task_id,
+        job_id=request.job_id,
+        page_number=request.page_number,
+        block_id=request.block_id,
+        submitted_at=now,
+    )
+
+
+def get_ocr_job_status(task_id: str) -> OcrJobStatusResponse:
+    with _jobs_lock:
+        job = _jobs.get(task_id)
+        if job is None:
+            raise KeyError(task_id)
+        snapshot = dict(job)
+    return _job_status_response(task_id, snapshot)

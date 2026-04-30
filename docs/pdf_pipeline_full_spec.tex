@@ -223,7 +223,7 @@ validate input
   -> write raw and normalized layout artifacts
   -> create overlays and crops
   -> route crops to OCR or vision
-  -> call OCR service for text/table/formula crops
+  -> start and poll async OCR jobs for text/table/formula crops
   -> call optional vision service for image/chart crops
   -> write pending vision manifest if needed
   -> build content_stream.json
@@ -387,7 +387,20 @@ Docker Compose points OCR traffic at \texttt{ocr\_glm} by default.
 GET  /health
 GET  /ready
 POST /ocr
+POST /ocr/jobs
+GET  /ocr/jobs/{task_id}
 \end{lstlisting}
+
+The synchronous \texttt{POST /ocr} endpoint remains available for compatibility
+and fast tests. Docker Compose enables async OCR by default. In that mode the
+orchestrator starts a job, polls status, and only considers the job stalled when
+\texttt{last\_heartbeat\_at} stops updating beyond the configured stall
+timeout.
+
+The first async implementation keeps GLM-OCR generation as one blocking
+\texttt{model.generate(...)} call. A background heartbeat ticker updates the
+job while generation runs. Token-level progress and partial output streaming
+are not implemented yet.
 
 \subsection{GLM-OCR Prompt Mapping}
 
@@ -505,6 +518,11 @@ Important timeouts:
 \begin{lstlisting}
 LAYOUT_TIMEOUT_SECONDS=120
 OCR_TIMEOUT_SECONDS=600
+OCR_ASYNC_ENABLED=true
+OCR_JOB_HTTP_TIMEOUT_SECONDS=30
+OCR_JOB_POLL_INTERVAL_SECONDS=5
+OCR_JOB_STALL_TIMEOUT_SECONDS=600
+OCR_JOB_MAX_RUNTIME_SECONDS=0
 VISION_TIMEOUT_SECONDS=1200
 \end{lstlisting}
 
@@ -614,7 +632,8 @@ detailed planning note lives in \texttt{docs/LAYOUT\_SCALING.md}.
 \begin{itemize}[leftmargin=1.2cm]
 \item PP-DocLayoutV3 is wired as a CPU-only service and still needs broader
   quality validation on representative documents.
-\item GLM-OCR CPU inference is slow because crops are processed one at a time.
+\item GLM-OCR CPU inference is slow because crops are processed one at a time;
+  async OCR avoids one long HTTP request but does not speed up inference.
 \item \texttt{vision\_llama} depends on an external multimodal
   \texttt{llama-server}; on CPU-class hardware it can be slow.
 \item Chart extraction from vision output is approximate.
@@ -636,6 +655,8 @@ detailed planning note lives in \texttt{docs/LAYOUT\_SCALING.md}.
 \item Validate GLM-OCR output quality on text, table, and formula crops.
 \item Validate \texttt{vision\_llama} output on images, charts, and diagrams.
 \item Improve vision prompts and normalization for chart data and Mermaid.
+\item Add token-level OCR progress or partial output streaming if the runtime
+  supports it cleanly.
 \end{itemize}
 
 \subsection{Performance}

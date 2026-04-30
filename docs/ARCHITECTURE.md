@@ -82,6 +82,8 @@ Responsibilities:
 - expose liveness through `GET /health`
 - expose model readiness through `GET /ready`
 - accept one cropped layout block through `POST /ocr`
+- accept async cropped-block jobs through `POST /ocr/jobs`
+- expose async job status and heartbeat through `GET /ocr/jobs/{task_id}`
 - return recognized content in the format requested by the orchestrator
 
 Docker Compose uses the `ocr_glm` worker, which loads the local GLM-OCR model
@@ -107,12 +109,23 @@ wrappers such as `$$ ... $$` before returning LaTeX to the orchestrator.
 Assembly owns the final Markdown wrapping.
 
 Real CPU inference is slow compared with the stubs, so Docker Compose configures
-larger service timeouts:
+async OCR job polling and larger service timeouts:
 
 ```text
 LAYOUT_TIMEOUT_SECONDS=120
 OCR_TIMEOUT_SECONDS=600
+OCR_ASYNC_ENABLED=true
+OCR_JOB_HTTP_TIMEOUT_SECONDS=30
+OCR_JOB_POLL_INTERVAL_SECONDS=5
+OCR_JOB_STALL_TIMEOUT_SECONDS=600
 ```
+
+In async mode, the orchestrator does not hold a single long `POST /ocr` request
+open while GLM-OCR runs. It starts a job, polls status, and only treats the job
+as stalled when `last_heartbeat_at` stops updating beyond the configured stall
+timeout. The current GLM-OCR implementation still calls `model.generate(...)`
+as one blocking operation; a background heartbeat ticker marks the worker alive
+during that call. Token-level progress is not implemented yet.
 
 The request and response schemas live in `shared/contracts/ocr.py`. Both the
 orchestrator and OCR service import this contract so the stub can be replaced by
@@ -252,7 +265,7 @@ Orchestrator owns:
 - normalized artifact persistence
 - crop generation from bbox
 - routing blocks to OCR or vision pipelines
-- OCR request orchestration
+- synchronous or async OCR request orchestration
 - raw and normalized OCR artifact persistence
 - vision request orchestration
 - raw and normalized vision artifact persistence

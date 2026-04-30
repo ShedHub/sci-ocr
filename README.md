@@ -32,6 +32,8 @@ The system currently supports:
 - shared Pydantic schemas for the OCR service request/response contract
 - OCR stub service with `GET /health`, `GET /ready`, and `POST /ocr`
 - GLM-OCR worker service with `GET /health`, `GET /ready`, and `POST /ocr`
+- async OCR job endpoints with heartbeat polling: `POST /ocr/jobs` and
+  `GET /ocr/jobs/{task_id}`
 - HTTP OCR service calls for OCR-routed crops
 - raw and normalized OCR artifacts from the HTTP service boundary
 - optional llama-server-backed vision service for image and chart blocks
@@ -45,8 +47,10 @@ The system currently supports:
 
 Docker Compose points OCR requests at the GLM-OCR worker by default. The
 `ocr_stub` service remains available for fast local tests and contract
-development. Docker Compose also includes a `vision_llama` adapter that expects
-an external local `llama-server` with a multimodal GGUF model and mmproj file.
+development. Docker Compose enables async OCR job polling by default so long
+CPU inference does not have to finish inside one HTTP request timeout. Docker
+Compose also includes a `vision_llama` adapter that expects an external local
+`llama-server` with a multimodal GGUF model and mmproj file.
 If the vision backend is unavailable, visual blocks remain in
 `vision_pending_manifest.json` and the rest of the pipeline continues.
 Assembly is implemented as a deterministic orchestrator module, so its output
@@ -241,11 +245,18 @@ Real CPU inference is much slower than the stubs. Docker Compose sets:
 ```text
 LAYOUT_TIMEOUT_SECONDS=120
 OCR_TIMEOUT_SECONDS=600
+OCR_ASYNC_ENABLED=true
+OCR_JOB_HTTP_TIMEOUT_SECONDS=30
+OCR_JOB_POLL_INTERVAL_SECONDS=5
+OCR_JOB_STALL_TIMEOUT_SECONDS=600
+OCR_JOB_MAX_RUNTIME_SECONDS=0
 VISION_TIMEOUT_SECONDS=1200
 ```
 
 The compact one-page fixture currently takes several minutes on CPU because OCR
-is called once per routed crop.
+is called once per routed crop. In async mode the orchestrator starts an OCR
+job, polls job status, and treats the job as stalled only when the worker
+heartbeat stops updating longer than `OCR_JOB_STALL_TIMEOUT_SECONDS`.
 
 CPU PP-DocLayoutV3 already uses Paddle/MKLDNN internal threading. Local
 measurements showed that one unrestricted layout worker processed a page in
@@ -372,7 +383,7 @@ API request
 -> create layout overlays and crops for every layout block
 -> route crops to OCR or vision processing
 -> check HTTP OCR service readiness
--> call HTTP OCR service for text/table/formula crops
+-> start and poll async OCR jobs for text/table/formula crops
 -> write raw and normalized OCR artifacts
 -> call optional HTTP vision service for image/chart crops
 -> write raw and normalized vision artifacts when vision completes
@@ -413,6 +424,8 @@ The current `ocr_stub` exposes:
 GET /health
 GET /ready
 POST /ocr
+POST /ocr/jobs
+GET /ocr/jobs/{task_id}
 ```
 
 It accepts one cropped block image at a time. Text and table requests ask for
@@ -428,6 +441,15 @@ text    -> Text Recognition:
 table   -> Table Recognition:
 formula -> Formula Recognition:
 ```
+
+The synchronous `POST /ocr` endpoint remains available for compatibility and
+fast tests. The Docker Compose orchestrator uses async OCR jobs by default:
+`POST /ocr/jobs` returns a `task_id`, while `GET /ocr/jobs/{task_id}` exposes
+`queued`, `running`, `completed`, `failed`, or `stalled` status, current stage,
+`last_heartbeat_at`, elapsed time, and the final OCR response when completed.
+The first implementation keeps GLM-OCR generation as a blocking
+`model.generate(...)` call and updates heartbeat from a background ticker while
+generation runs.
 
 ## Vision Backend
 

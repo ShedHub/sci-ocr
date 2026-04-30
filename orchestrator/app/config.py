@@ -26,6 +26,18 @@ OCR_SERVICE_URL = os.getenv("OCR_SERVICE_URL", "http://127.0.0.1:8002")
 # OCR can be slow on CPU-backed real models; stubs keep using the fast default.
 OCR_TIMEOUT_SECONDS = float(os.getenv("OCR_TIMEOUT_SECONDS", "30"))
 
+# Async OCR avoids holding one long HTTP request open while a CPU model runs.
+OCR_ASYNC_ENABLED = os.getenv("OCR_ASYNC_ENABLED", "false").lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+OCR_JOB_HTTP_TIMEOUT_SECONDS = float(os.getenv("OCR_JOB_HTTP_TIMEOUT_SECONDS", "30"))
+OCR_JOB_POLL_INTERVAL_SECONDS = float(os.getenv("OCR_JOB_POLL_INTERVAL_SECONDS", "5"))
+OCR_JOB_STALL_TIMEOUT_SECONDS = float(os.getenv("OCR_JOB_STALL_TIMEOUT_SECONDS", "600"))
+OCR_JOB_MAX_RUNTIME_SECONDS = float(os.getenv("OCR_JOB_MAX_RUNTIME_SECONDS", "0"))
+
 # Optional HTTP vision backend. If unset, visual crops stay in the pending
 # manifest so the rest of the pipeline remains usable without a local VLM.
 VISION_SERVICE_URL = os.getenv("VISION_SERVICE_URL")
