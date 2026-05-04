@@ -297,10 +297,9 @@ Current temporary vision backend:
   `POST /vision`.
 - It calls a multimodal `llama-server` through its OpenAI-compatible chat
   completions endpoint.
-- The preferred portable CPU deployment runs `llama-server` as the
-  `llama_server_cpu` Compose service from `docker-compose.vision-cpu.yml`.
-- The older host runtime remains available for development and uses
-  `host.docker.internal`.
+- The deployment runs `llama-server` as the `llama_server_cpu` Compose service
+  from `docker-compose.yml`; host `llama-server` runtimes are not part of the
+  supported path.
 - It prompts in English to classify visual blocks, describe illustrations,
   extract approximate chart data, and return Mermaid for diagrams when possible.
 - If the backend is not configured or not ready, the orchestrator leaves visual

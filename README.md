@@ -49,9 +49,8 @@ Docker Compose points OCR requests at the GLM-OCR worker by default. The
 `ocr_stub` service remains available for fast local tests and contract
 development. Docker Compose enables async OCR job polling by default so long
 CPU inference does not have to finish inside one HTTP request timeout. Docker
-Compose also includes a `vision_llama` adapter for visual blocks. The preferred
-portable CPU path runs `llama-server` through `docker-compose.vision-cpu.yml`;
-the older host `llama-server` setup remains available for development.
+Compose also runs `llama_server_cpu` for visual blocks; `vision_llama` calls it
+inside the Compose network.
 If the vision backend is unavailable, visual blocks remain in
 `vision_pending_manifest.json` and the rest of the pipeline continues.
 Assembly is implemented as a deterministic orchestrator module, so its output
@@ -172,25 +171,15 @@ configuration.
 
 ### Docker Compose With Real Layout, OCR, And Optional Vision
 
-Docker Compose runs the real CPU layout service, the GLM-OCR worker, and the
-`vision_llama` adapter by default:
+Docker Compose runs the real CPU layout service, the GLM-OCR worker, the
+containerized CPU `llama-server`, and the `vision_llama` adapter by default:
 
 ```powershell
 docker compose build layout_ppdoclayoutv3_cpu ocr_glm vision_llama orchestrator
-docker compose up -d layout_ppdoclayoutv3_cpu ocr_glm vision_llama orchestrator
+docker compose up -d llama_server_cpu layout_ppdoclayoutv3_cpu ocr_glm vision_llama orchestrator
 ```
 
-For visual blocks, the preferred portable CPU mode is to run `llama-server`
-inside Docker through the Compose override:
-
-```powershell
-docker compose `
-  -f docker-compose.yml `
-  -f docker-compose.vision-cpu.yml `
-  up -d llama_server_cpu layout_ppdoclayoutv3_cpu ocr_glm vision_llama orchestrator
-```
-
-This mounts local GGUF files from:
+The `llama_server_cpu` service mounts local GGUF files from:
 
 ```text
 models/vision/qwen3.6-27b/
@@ -201,19 +190,6 @@ models/vision/qwen3.6-27b/
 The container can be tuned with `LLAMA_CONTEXT_SIZE`, `LLAMA_THREADS`,
 `LLAMA_MODEL_PATH`, and `LLAMA_MMPROJ_PATH`.
 
-The older host runtime is still available for development. Start
-`llama-server` on the host first. Replace the paths with your local GGUF and
-mmproj files:
-
-```powershell
-llama-server `
-  -m C:\models\qwen3.6-27b-q4_k_m.gguf `
-  --mmproj C:\models\qwen3.6-27b-mmproj.gguf `
-  --host 127.0.0.1 `
-  --port 8080 `
-  -c 4096
-```
-
 Check service readiness:
 
 ```powershell
@@ -223,11 +199,9 @@ Invoke-RestMethod http://127.0.0.1:8006/ready
 Invoke-RestMethod http://127.0.0.1:8000/health
 ```
 
-With `docker-compose.vision-cpu.yml`, `vision_llama` calls
-`http://llama_server:8080` inside the Compose network. In the older host
-runtime, it calls `http://host.docker.internal:8080`. If `llama-server` is not
-running or times out, visual blocks remain pending instead of failing the whole
-job.
+`vision_llama` calls `http://llama_server:8080` inside the Compose network. If
+the containerized `llama-server` is unavailable or times out, visual blocks
+remain pending instead of failing the whole job.
 
 Run the compact fixture through the full pipeline:
 
@@ -481,12 +455,10 @@ generation runs.
 
 The vision boundary is implemented through `shared/contracts/vision.py`.
 
-The current `services/vision_llama` backend is an adapter around multimodal
-`llama-server`. The preferred CPU runtime starts `llama-server` as the
-`llama_server_cpu` Compose service through `docker-compose.vision-cpu.yml`; the
-host `llama-server` runtime remains available for development. The adapter sends
-one cropped image/chart block at a time with an English prompt. The prompt asks
-the model to classify the visual block as an illustration, chart/plot,
+The current `services/vision_llama` backend is an adapter around the
+containerized multimodal `llama_server_cpu` service. The adapter sends one
+cropped image/chart block at a time with an English prompt. The prompt asks the
+model to classify the visual block as an illustration, chart/plot,
 diagram/flowchart, table-like visual, or unknown.
 
 For illustrations, the model returns a detailed Markdown description. For
@@ -517,7 +489,7 @@ visual blocks are represented as pending placeholders.
 Detailed assembly design and validation notes are documented in
 `docs/ASSEMBLY.md`.
 
-Detailed setup and troubleshooting for the temporary local vision backend are
+Detailed setup and troubleshooting for the temporary containerized vision backend are
 documented in `docs/VISION_LLAMA.md`.
 
 ## Current Limitations

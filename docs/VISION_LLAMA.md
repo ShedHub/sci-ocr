@@ -14,20 +14,17 @@ PDF -> page rendering -> layout -> crops -> OCR + Vision -> assembly -> article.
 ```
 
 The layout stage may route image-like or chart-like blocks to `vision`.
-`vision_llama` receives each visual crop, sends it to a local multimodal
-`llama-server`, normalizes the response, and assembly inserts the Markdown into
-the final article.
+`vision_llama` receives each visual crop, sends it to the containerized
+multimodal `llama_server_cpu` service, normalizes the response, and assembly
+inserts the Markdown into the final article.
 
 ## Local Files
 
-The current local setup stores temporary binaries and model files inside the
-project folder, but outside Git.
+The current local setup stores model files inside the project folder, but
+outside Git. The `llama-server` binary itself is provided by the
+`ghcr.io/ggml-org/llama.cpp:server` container image.
 
 ```text
-local_tools/
-  llama.cpp/
-    llama-server.exe
-
 models/
   vision/
     qwen3.6-27b/
@@ -39,14 +36,10 @@ These paths are intentionally ignored by `.gitignore`.
 
 ## Runtime Components
 
-There are two supported runtime modes.
-
-### Docker CPU Runtime
-
-This is the preferred portable mode for CPU-only machines:
+The vision runtime is container-only:
 
 1. `llama_server_cpu`
-   - Runs inside Docker through `docker-compose.vision-cpu.yml`.
+   - Runs inside Docker through `docker-compose.yml`.
    - Uses the official `ghcr.io/ggml-org/llama.cpp:server` image.
    - Loads the mounted GGUF model and mmproj files from `models/vision/`.
    - Exposes an OpenAI-compatible endpoint at `http://llama_server:8080`
@@ -60,10 +53,7 @@ This is the preferred portable mode for CPU-only machines:
 Start the Docker CPU runtime with:
 
 ```powershell
-docker compose `
-  -f docker-compose.yml `
-  -f docker-compose.vision-cpu.yml `
-  up -d llama_server_cpu layout_ppdoclayoutv3_cpu ocr_glm vision_llama orchestrator
+docker compose up -d llama_server_cpu layout_ppdoclayoutv3_cpu ocr_glm vision_llama orchestrator
 ```
 
 Check readiness:
@@ -83,71 +73,24 @@ LLAMA_CONTEXT_SIZE=4096
 LLAMA_THREADS=16
 ```
 
-### Host Runtime
+## Start Docker Services
 
-This is the older local development mode:
-
-1. `llama-server`
-   - Runs on the Windows host.
-   - Loads the large GGUF model and mmproj file.
-   - Exposes an OpenAI-compatible endpoint at `http://127.0.0.1:8080`.
-
-2. `vision_llama`
-   - Runs as a Docker service.
-   - Exposes `GET /health`, `GET /ready`, and `POST /vision`.
-   - Calls host `llama-server` through `http://host.docker.internal:8080`.
-
-This split keeps the heavyweight temporary model runtime outside Docker while
-the pipeline keeps using normal HTTP service boundaries.
-
-## Start llama-server
-
-From the project root:
+Build the affected services:
 
 ```powershell
-.\scripts\run_vision_llama_server.ps1
+docker compose build layout_ppdoclayoutv3_cpu ocr_glm vision_llama orchestrator
 ```
 
-Optional parameters:
+Start the pipeline services:
 
 ```powershell
-.\scripts\run_vision_llama_server.ps1 `
-  -Port 8080 `
-  -ContextSize 4096 `
-  -Threads 16
+docker compose up -d llama_server_cpu layout_ppdoclayoutv3_cpu ocr_glm vision_llama orchestrator
 ```
 
 Check readiness:
 
 ```powershell
 Invoke-RestMethod http://127.0.0.1:8080/health
-```
-
-Expected response:
-
-```text
-status
-------
-ok
-```
-
-## Start Docker Services With Host llama-server
-
-Build the affected services:
-
-```powershell
-docker compose build vision_llama orchestrator
-```
-
-Start the pipeline services:
-
-```powershell
-docker compose up -d layout_ppdoclayoutv3_cpu ocr_glm vision_llama orchestrator
-```
-
-Check readiness:
-
-```powershell
 Invoke-RestMethod http://127.0.0.1:8004/ready
 Invoke-RestMethod http://127.0.0.1:8005/ready
 Invoke-RestMethod http://127.0.0.1:8006/ready

@@ -297,7 +297,6 @@ differently.
 - CPU PP-DocLayoutV3 already uses Paddle/MKLDNN internal threading. Do not split
   a normal CPU into many undersized layout containers; use a properly sized
   worker pool in future high-core deployments. See `docs/LAYOUT_SCALING.md`.
-- The temporary `vision_llama` backend depends on a multimodal `llama-server`
-  runtime. The preferred portable CPU runtime is `llama_server_cpu` from
-  `docker-compose.vision-cpu.yml`; if the runtime is unavailable or times out,
-  image and chart crops are recorded as pending.
+- The temporary `vision_llama` backend depends on the containerized multimodal
+  `llama_server_cpu` runtime from `docker-compose.yml`; if the runtime is
+  unavailable or times out, image and chart crops are recorded as pending.

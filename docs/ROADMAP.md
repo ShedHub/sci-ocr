@@ -34,7 +34,7 @@
   `vision_llama` adapter for image/chart crops
 - Insert completed vision Markdown into assembled `article.md`, with pending
   fallback when the vision backend is unavailable
-- Add a portable CPU `llama_server_cpu` Compose runtime for `vision_llama`
+- Add a containerized CPU `llama_server_cpu` Compose runtime for `vision_llama`
 - Verify an end-to-end Docker CPU vision run on `science_mixed_content.pdf`
   with PP-DocLayoutV3, GLM-OCR, and containerized `llama-server`
 
