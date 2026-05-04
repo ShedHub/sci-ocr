@@ -295,8 +295,12 @@ Current temporary vision backend:
 
 - `services/vision_llama` exposes `GET /health`, `GET /ready`, and
   `POST /vision`.
-- It calls a separately running multimodal `llama-server` through its
-  OpenAI-compatible chat completions endpoint.
+- It calls a multimodal `llama-server` through its OpenAI-compatible chat
+  completions endpoint.
+- The preferred portable CPU deployment runs `llama-server` as the
+  `llama_server_cpu` Compose service from `docker-compose.vision-cpu.yml`.
+- The older host runtime remains available for development and uses
+  `host.docker.internal`.
 - It prompts in English to classify visual blocks, describe illustrations,
   extract approximate chart data, and return Mermaid for diagrams when possible.
 - If the backend is not configured or not ready, the orchestrator leaves visual

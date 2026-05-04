@@ -34,6 +34,9 @@
   `vision_llama` adapter for image/chart crops
 - Insert completed vision Markdown into assembled `article.md`, with pending
   fallback when the vision backend is unavailable
+- Add a portable CPU `llama_server_cpu` Compose runtime for `vision_llama`
+- Verify an end-to-end Docker CPU vision run on `science_mixed_content.pdf`
+  with PP-DocLayoutV3, GLM-OCR, and containerized `llama-server`
 
 ## Next
 
@@ -46,6 +49,8 @@
   assembly order
 - Improve vision prompts and output normalization for chart data and Mermaid
   diagrams
+- Reduce CPU vision latency and prevent reasoning-style or truncated
+  `vision_llama` output on chart crops
 - Improve OCR throughput with batching, parallel crop processing, or GPU
   execution
 - Add token-level OCR generation progress or partial output streaming if the
@@ -54,6 +59,7 @@
   machines. See `docs/LAYOUT_SCALING.md`.
 - Replace or augment the temporary llama-server vision backend with specialized
   image, chart, and diagram processors when quality requirements are clearer
+- Add a GPU `llama-server` Compose runtime for machines with supported GPUs
 - Improve assembly for multi-column reading order, paragraph merging, and
   figure/chart caption association
 - Add a separate GPU PP-DocLayoutV3 container and orchestrator backend switch

@@ -782,9 +782,11 @@ Example:
 Vision is an optional external worker service. It receives one cropped visual
 block and returns Markdown-ready content for article assembly.
 
-The current backend is `vision_llama`, an adapter around a separately running
-multimodal `llama-server`. Later specialized image, chart, and diagram workers
-can replace or augment it behind the same contract.
+The current backend is `vision_llama`, an adapter around multimodal
+`llama-server`. The preferred portable CPU runtime is the `llama_server_cpu`
+Compose service defined in `docker-compose.vision-cpu.yml`; the older host
+runtime remains available for development. Later specialized image, chart, and
+diagram workers can replace or augment it behind the same contract.
 
 ### Endpoints
 

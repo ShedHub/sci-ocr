@@ -49,8 +49,9 @@ Docker Compose points OCR requests at the GLM-OCR worker by default. The
 `ocr_stub` service remains available for fast local tests and contract
 development. Docker Compose enables async OCR job polling by default so long
 CPU inference does not have to finish inside one HTTP request timeout. Docker
-Compose also includes a `vision_llama` adapter that expects an external local
-`llama-server` with a multimodal GGUF model and mmproj file.
+Compose also includes a `vision_llama` adapter for visual blocks. The preferred
+portable CPU path runs `llama-server` through `docker-compose.vision-cpu.yml`;
+the older host `llama-server` setup remains available for development.
 If the vision backend is unavailable, visual blocks remain in
 `vision_pending_manifest.json` and the rest of the pipeline continues.
 Assembly is implemented as a deterministic orchestrator module, so its output
@@ -216,14 +217,17 @@ llama-server `
 Check service readiness:
 
 ```powershell
+Invoke-RestMethod http://127.0.0.1:8080/health
 Invoke-RestMethod http://127.0.0.1:8005/ready
 Invoke-RestMethod http://127.0.0.1:8006/ready
 Invoke-RestMethod http://127.0.0.1:8000/health
 ```
 
-`vision_llama` calls `http://host.docker.internal:8080` from Docker Compose.
-If `llama-server` is not running, visual blocks remain pending instead of
-failing the whole job.
+With `docker-compose.vision-cpu.yml`, `vision_llama` calls
+`http://llama_server:8080` inside the Compose network. In the older host
+runtime, it calls `http://host.docker.internal:8080`. If `llama-server` is not
+running or times out, visual blocks remain pending instead of failing the whole
+job.
 
 Run the compact fixture through the full pipeline:
 
@@ -477,11 +481,13 @@ generation runs.
 
 The vision boundary is implemented through `shared/contracts/vision.py`.
 
-The current `services/vision_llama` backend is an adapter around a separately
-running multimodal `llama-server`. It sends one cropped image/chart block at a
-time with an English prompt. The prompt asks the model to classify the visual
-block as an illustration, chart/plot, diagram/flowchart, table-like visual, or
-unknown.
+The current `services/vision_llama` backend is an adapter around multimodal
+`llama-server`. The preferred CPU runtime starts `llama-server` as the
+`llama_server_cpu` Compose service through `docker-compose.vision-cpu.yml`; the
+host `llama-server` runtime remains available for development. The adapter sends
+one cropped image/chart block at a time with an English prompt. The prompt asks
+the model to classify the visual block as an illustration, chart/plot,
+diagram/flowchart, table-like visual, or unknown.
 
 For illustrations, the model returns a detailed Markdown description. For
 charts, it returns axes, legend, trends, and approximate data as a Markdown
@@ -523,8 +529,9 @@ documented in `docs/VISION_LLAMA.md`.
 - Real GLM-OCR CPU inference is slow because OCR-routed crops are processed
   sequentially; batching, parallelism, and/or GPU execution are future
   performance work.
-- `vision_llama` depends on an external multimodal `llama-server`; on CPU-only
-  hardware it can be slow and chart data extraction may be approximate.
+- `vision_llama` depends on a multimodal `llama-server` runtime. The portable
+  CPU Compose runtime works end-to-end, but it is slow on CPU-only hardware and
+  chart data extraction may be approximate.
 - Assembly currently uses deterministic rules and does not repair multi-column
   reading order or merge broken paragraphs beyond the order exposed by layout.
 - A separate GPU layout container and orchestrator backend switch are planned
