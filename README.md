@@ -179,8 +179,30 @@ docker compose build layout_ppdoclayoutv3_cpu ocr_glm vision_llama orchestrator
 docker compose up -d layout_ppdoclayoutv3_cpu ocr_glm vision_llama orchestrator
 ```
 
-For visual blocks, start `llama-server` on the host first. Replace the paths
-with your local GGUF and mmproj files:
+For visual blocks, the preferred portable CPU mode is to run `llama-server`
+inside Docker through the Compose override:
+
+```powershell
+docker compose `
+  -f docker-compose.yml `
+  -f docker-compose.vision-cpu.yml `
+  up -d llama_server_cpu layout_ppdoclayoutv3_cpu ocr_glm vision_llama orchestrator
+```
+
+This mounts local GGUF files from:
+
+```text
+models/vision/qwen3.6-27b/
++-- Qwen3.6-27B-Q4_K_M.gguf
++-- mmproj-F16.gguf
+```
+
+The container can be tuned with `LLAMA_CONTEXT_SIZE`, `LLAMA_THREADS`,
+`LLAMA_MODEL_PATH`, and `LLAMA_MMPROJ_PATH`.
+
+The older host runtime is still available for development. Start
+`llama-server` on the host first. Replace the paths with your local GGUF and
+mmproj files:
 
 ```powershell
 llama-server `

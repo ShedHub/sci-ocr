@@ -39,7 +39,53 @@ These paths are intentionally ignored by `.gitignore`.
 
 ## Runtime Components
 
-There are two separate pieces:
+There are two supported runtime modes.
+
+### Docker CPU Runtime
+
+This is the preferred portable mode for CPU-only machines:
+
+1. `llama_server_cpu`
+   - Runs inside Docker through `docker-compose.vision-cpu.yml`.
+   - Uses the official `ghcr.io/ggml-org/llama.cpp:server` image.
+   - Loads the mounted GGUF model and mmproj files from `models/vision/`.
+   - Exposes an OpenAI-compatible endpoint at `http://llama_server:8080`
+     inside the Compose network and at `http://127.0.0.1:8080` on the host.
+
+2. `vision_llama`
+   - Runs as a Docker service.
+   - Exposes `GET /health`, `GET /ready`, and `POST /vision`.
+   - Calls `llama_server_cpu` through `http://llama_server:8080`.
+
+Start the Docker CPU runtime with:
+
+```powershell
+docker compose `
+  -f docker-compose.yml `
+  -f docker-compose.vision-cpu.yml `
+  up -d llama_server_cpu layout_ppdoclayoutv3_cpu ocr_glm vision_llama orchestrator
+```
+
+Check readiness:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8080/health
+Invoke-RestMethod http://127.0.0.1:8006/ready
+```
+
+The CPU runtime can be tuned through `.env`:
+
+```text
+LLAMA_SERVER_PORT=8080
+LLAMA_MODEL_PATH=/models/vision/qwen3.6-27b/Qwen3.6-27B-Q4_K_M.gguf
+LLAMA_MMPROJ_PATH=/models/vision/qwen3.6-27b/mmproj-F16.gguf
+LLAMA_CONTEXT_SIZE=4096
+LLAMA_THREADS=16
+```
+
+### Host Runtime
+
+This is the older local development mode:
 
 1. `llama-server`
    - Runs on the Windows host.
@@ -85,7 +131,7 @@ status
 ok
 ```
 
-## Start Docker Services
+## Start Docker Services With Host llama-server
 
 Build the affected services:
 
