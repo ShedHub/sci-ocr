@@ -263,9 +263,10 @@ Expected response direction:
 }
 ```
 
-This OCR contract is implemented in `shared/contracts/ocr.py`. The current
-Docker Compose worker is `ocr_glm`; `ocr_stub` remains available for fast local
-contract tests and deterministic smoke tests.
+This OCR contract is implemented in `shared/contracts/ocr.py`. The default
+Docker Compose worker is `ocr_glm`; the GPU override switches the orchestrator
+to `ocr_glm_gpu` behind the same contract. `ocr_stub` remains available for
+fast local contract tests and deterministic smoke tests.
 
 ## Assembly Implications
 
@@ -290,13 +291,15 @@ differently.
 
 - PP-DocLayoutV3 output quality still needs validation on representative
   documents before the CPU service is treated as stable.
-- Docker Compose calls `ocr_glm` by default. `ocr_stub` is still useful for fast
-  local tests.
+- Docker Compose calls `ocr_glm` by default. `docker-compose.gpu.yml` switches
+  OCR to `ocr_glm_gpu`. `ocr_stub` is still useful for fast local tests.
 - GLM-OCR CPU inference is slow because OCR-routed crops are processed one at a
-  time; batching, parallelism, or GPU execution are planned performance work.
+  time. GPU OCR is available for Nvidia hosts; batching and parallel crop
+  scheduling are still planned performance work.
 - CPU PP-DocLayoutV3 already uses Paddle/MKLDNN internal threading. Do not split
   a normal CPU into many undersized layout containers; use a properly sized
   worker pool in future high-core deployments. See `docs/LAYOUT_SCALING.md`.
-- The temporary `vision_llama` backend depends on the containerized multimodal
-  `llama_server_cpu` runtime from `docker-compose.yml`; if the runtime is
-  unavailable or times out, image and chart crops are recorded as pending.
+- The temporary `vision_llama` backend depends on a containerized multimodal
+  llama-server runtime. CPU runs use `llama_server_cpu`; GPU runs use
+  `llama_server_gpu`. If the runtime is unavailable or times out, image and
+  chart crops are recorded as pending.

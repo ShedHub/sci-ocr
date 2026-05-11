@@ -37,6 +37,9 @@ The system currently supports:
 - HTTP OCR service calls for OCR-routed crops
 - raw and normalized OCR artifacts from the HTTP service boundary
 - optional llama-server-backed vision service for image and chart blocks
+- GPU OCR deployment through `docker-compose.gpu.yml` and
+  `services/ocr_glm/Dockerfile.gpu`
+- GPU llama-server deployment for visual blocks through `llama_server_gpu`
 - pending vision manifest when the vision backend is not configured or ready
 - raw and normalized vision artifacts from the HTTP service boundary
 - deterministic assembly stage that builds `content_stream.json` and
@@ -50,7 +53,10 @@ Docker Compose points OCR requests at the GLM-OCR worker by default. The
 development. Docker Compose enables async OCR job polling by default so long
 CPU inference does not have to finish inside one HTTP request timeout. Docker
 Compose also runs `llama_server_cpu` for visual blocks; `vision_llama` calls it
-inside the Compose network.
+inside the Compose network. On Ubuntu hosts with Nvidia GPUs,
+`docker-compose.gpu.yml` switches OCR to `ocr_glm_gpu` and replaces the CPU
+llama-server runtime with `llama_server_gpu` while keeping the same
+orchestrator and `vision_llama` HTTP contracts.
 If the vision backend is unavailable, visual blocks remain in
 `vision_pending_manifest.json` and the rest of the pipeline continues.
 Assembly is implemented as a deterministic orchestrator module, so its output
@@ -95,6 +101,7 @@ sci-ocr/
 +-- scripts/
 +-- tests/
 +-- docker-compose.yml
++-- docker-compose.gpu.yml          # Optional Nvidia GPU OCR and vision override
 +-- README.md
 ```
 
@@ -165,8 +172,9 @@ folder mounted at `/models/ocr/glm-ocr`.
 The orchestrator reads optional `VISION_SERVICE_URL` from the environment. If
 omitted, image and chart blocks stay in `vision_pending_manifest.json`.
 
-Current real layout inference is CPU-only. A separate GPU layout container will
-be added later, with orchestrator-level service selection through environment
+Current real layout inference is CPU-only. OCR and llama-server vision have
+optional Nvidia GPU Compose runtimes. A separate GPU layout container will be
+added later, with orchestrator-level service selection through environment
 configuration.
 
 ### Docker Compose With Real Layout, OCR, And Optional Vision
@@ -240,6 +248,52 @@ torchvision==0.24.1+cpu
 This avoids pulling CUDA-sized dependencies into the CPU container. The worker
 also requires `torchvision` because the GLM-OCR processor depends on it.
 
+### Docker Compose On Ubuntu With Nvidia GPU
+
+The GPU override keeps the same pipeline architecture, but switches heavy
+model backends:
+
+```text
+ocr_glm        -> ocr_glm_gpu
+llama_server_cpu -> llama_server_gpu
+```
+
+`vision_llama` is unchanged. It still calls `http://llama_server:8080` inside
+the Compose network; in GPU mode that alias points to `llama_server_gpu`.
+
+Before starting the GPU stack, verify the Ubuntu host:
+
+```bash
+nvidia-smi
+docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi
+```
+
+Build and start:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml build \
+  ocr_glm_gpu orchestrator vision_llama
+
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d \
+  llama_server_gpu layout_ppdoclayoutv3_cpu ocr_glm_gpu vision_llama orchestrator
+```
+
+Check readiness:
+
+```bash
+curl http://127.0.0.1:8080/health
+curl http://127.0.0.1:8004/ready
+curl http://127.0.0.1:8007/ready
+curl http://127.0.0.1:8006/ready
+curl http://127.0.0.1:8000/health
+```
+
+`ocr_glm_gpu` sets `OCR_REQUIRE_CUDA=true`, so `/ready` fails if PyTorch cannot
+see a CUDA GPU instead of silently falling back to CPU. The GPU OCR image uses
+the CUDA PyTorch wheel index `https://download.pytorch.org/whl/cu126`.
+
+More details are in `docs/GPU.md`.
+
 Real CPU inference is much slower than the stubs. Docker Compose sets:
 
 ```text
@@ -256,7 +310,8 @@ VISION_TIMEOUT_SECONDS=1200
 The compact one-page fixture currently takes several minutes on CPU because OCR
 is called once per routed crop. In async mode the orchestrator starts an OCR
 job, polls job status, and treats the job as stalled only when the worker
-heartbeat stops updating longer than `OCR_JOB_STALL_TIMEOUT_SECONDS`.
+heartbeat stops updating longer than `OCR_JOB_STALL_TIMEOUT_SECONDS`. On Nvidia
+GPU machines, use `docker-compose.gpu.yml` to reduce OCR and vision latency.
 
 CPU PP-DocLayoutV3 already uses Paddle/MKLDNN internal threading. Local
 measurements showed that one unrestricted layout worker processed a page in
@@ -434,7 +489,10 @@ crop path and returns deterministic placeholder content so tests can exercise
 the full service boundary quickly.
 
 Docker Compose uses `services/ocr_glm`, which implements the same contract with
-the local GLM-OCR model. It maps route tasks to the model prompts:
+the local GLM-OCR model. The default CPU image uses CPU PyTorch wheels. The GPU
+override uses `ocr_glm_gpu`, built from `services/ocr_glm/Dockerfile.gpu`, with
+CUDA PyTorch wheels and the same HTTP API. It maps route tasks to the model
+prompts:
 
 ```text
 text    -> Text Recognition:
@@ -455,11 +513,12 @@ generation runs.
 
 The vision boundary is implemented through `shared/contracts/vision.py`.
 
-The current `services/vision_llama` backend is an adapter around the
-containerized multimodal `llama_server_cpu` service. The adapter sends one
-cropped image/chart block at a time with an English prompt. The prompt asks the
-model to classify the visual block as an illustration, chart/plot,
-diagram/flowchart, table-like visual, or unknown.
+The current `services/vision_llama` backend is an adapter around a
+containerized multimodal `llama-server` runtime. The default Compose runtime is
+`llama_server_cpu`; the GPU override replaces it with `llama_server_gpu`.
+The adapter sends one cropped image/chart block at a time with an English
+prompt. The prompt asks the model to classify the visual block as an
+illustration, chart/plot, diagram/flowchart, table-like visual, or unknown.
 
 For illustrations, the model returns a detailed Markdown description. For
 charts, it returns axes, legend, trends, and approximate data as a Markdown
@@ -492,18 +551,22 @@ Detailed assembly design and validation notes are documented in
 Detailed setup and troubleshooting for the temporary containerized vision backend are
 documented in `docs/VISION_LLAMA.md`.
 
+GPU OCR and GPU llama-server setup for Ubuntu hosts with Nvidia GPUs is documented in
+`docs/GPU.md`.
+
 ## Current Limitations
 
 - PP-DocLayoutV3 is wired as a CPU-only layout service and preserves native
   labels, but still needs quality validation on representative documents.
 - GLM-OCR is wired as the Docker Compose OCR backend, while `ocr_stub` remains
-  available for fast local contract tests.
+  available for fast local contract tests. A GPU OCR worker is available
+  through `docker-compose.gpu.yml`.
 - Real GLM-OCR CPU inference is slow because OCR-routed crops are processed
-  sequentially; batching, parallelism, and/or GPU execution are future
+  sequentially; batching and parallel crop scheduling are still future
   performance work.
-- `vision_llama` depends on a multimodal `llama-server` runtime. The portable
-  CPU Compose runtime works end-to-end, but it is slow on CPU-only hardware and
-  chart data extraction may be approximate.
+- `vision_llama` depends on a multimodal `llama-server` runtime. CPU and Nvidia
+  GPU Compose runtimes are available, but chart data extraction may still be
+  approximate.
 - Assembly currently uses deterministic rules and does not repair multi-column
   reading order or merge broken paragraphs beyond the order exposed by layout.
 - A separate GPU layout container and orchestrator backend switch are planned

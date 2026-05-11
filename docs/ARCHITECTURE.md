@@ -18,6 +18,8 @@ The current implementation focuses on the foundation:
 - deterministic block routing rules for OCR and vision workers
 - OCR HTTP boundary with contract-compatible stub and GLM-OCR workers
 - optional vision HTTP boundary with a llama-server-backed adapter
+- optional Nvidia GPU deployment for GLM-OCR and llama-server through
+  `docker-compose.gpu.yml`
 
 ## Orchestrator
 
@@ -91,10 +93,17 @@ and implements the same shared contract. The `ocr_stub` worker remains available
 for fast local tests; it validates the crop path and returns deterministic
 placeholder content.
 
-The GLM-OCR worker lives in `services/ocr_glm/`. Its container installs CPU
-PyTorch wheels explicitly (`torch==2.9.1+cpu` and `torchvision==0.24.1+cpu`) so
-the CPU deployment does not pull CUDA-sized dependencies. `torchvision` is
-required by the GLM-OCR processor.
+The GLM-OCR worker lives in `services/ocr_glm/`. The default container installs
+CPU PyTorch wheels explicitly (`torch==2.9.1+cpu` and
+`torchvision==0.24.1+cpu`) so the CPU deployment does not pull CUDA-sized
+dependencies. `torchvision` is required by the GLM-OCR processor.
+
+The GPU OCR worker is the same application code built from
+`services/ocr_glm/Dockerfile.gpu`. It installs CUDA PyTorch wheels from
+`https://download.pytorch.org/whl/cu126` and is exposed as `ocr_glm_gpu` by
+`docker-compose.gpu.yml`. The GPU service sets `OCR_REQUIRE_CUDA=true`, so
+readiness fails if PyTorch cannot access a CUDA GPU. The orchestrator selects it
+only by changing `OCR_SERVICE_URL` to `http://ocr_glm_gpu:8000`.
 
 The worker maps the orchestrator's route decisions into GLM-OCR prompts:
 
@@ -201,10 +210,11 @@ adapter module. Canonical layout block types leave the service boundary in
 available.
 
 The current PP-DocLayoutV3 runtime target is CPU-only and lives in
-`services/layout_ppdoclayoutv3_cpu/`. A future GPU runtime should be added as a
-separate service/container rather than changing the CPU service in place. The
-orchestrator should keep selecting the active layout backend through
-`LAYOUT_SERVICE_URL`.
+`services/layout_ppdoclayoutv3_cpu/`. A future GPU layout runtime should be
+added as a separate service/container rather than changing the CPU service in
+place. The orchestrator should keep selecting the active layout backend through
+`LAYOUT_SERVICE_URL`, just as OCR now switches between CPU and GPU workers
+through `OCR_SERVICE_URL`.
 
 CPU PP-DocLayoutV3 already uses Paddle/MKLDNN internal threading. Local
 measurements show that one unrestricted worker is faster than several
@@ -297,13 +307,44 @@ Current temporary vision backend:
   `POST /vision`.
 - It calls a multimodal `llama-server` through its OpenAI-compatible chat
   completions endpoint.
-- The deployment runs `llama-server` as the `llama_server_cpu` Compose service
-  from `docker-compose.yml`; host `llama-server` runtimes are not part of the
-  supported path.
+- The default deployment runs `llama-server` as the `llama_server_cpu` Compose
+  service from `docker-compose.yml`.
+- The Nvidia GPU deployment runs `llama-server` as `llama_server_gpu` from
+  `docker-compose.gpu.yml`, using `ghcr.io/ggml-org/llama.cpp:server-cuda`.
+- Both CPU and GPU services expose the same Compose network alias,
+  `llama_server`, so `vision_llama` keeps using `LLAMA_SERVER_URL` set to
+  `http://llama_server:8080`.
+- Host `llama-server` runtimes are not part of the supported path.
 - It prompts in English to classify visual blocks, describe illustrations,
   extract approximate chart data, and return Mermaid for diagrams when possible.
 - If the backend is not configured or not ready, the orchestrator leaves visual
   blocks pending rather than failing the pipeline.
+
+## Runtime Selection
+
+CPU is the default runtime:
+
+```bash
+docker compose up -d llama_server_cpu layout_ppdoclayoutv3_cpu ocr_glm vision_llama orchestrator
+```
+
+Nvidia GPU OCR and vision are enabled with the Compose override:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d \
+  llama_server_gpu layout_ppdoclayoutv3_cpu ocr_glm_gpu vision_llama orchestrator
+```
+
+The override changes deployment wiring, not pipeline behavior:
+
+```text
+OCR_SERVICE_URL=http://ocr_glm_gpu:8000
+LLAMA_SERVER_URL=http://llama_server:8080
+```
+
+`vision_llama` remains unchanged because the `llama_server` network alias points
+to the active llama-server runtime. `ocr_glm` and `ocr_glm_gpu` share the same
+HTTP contract and model adapter code.
 
 ## Assembly Stage
 

@@ -1,0 +1,64 @@
+services:
+  llama_server_cpu:
+    profiles:
+      - cpu-vision
+
+  vision_llama:
+    depends_on: !override
+      - llama_server_gpu
+
+  llama_server_gpu:
+    image: ${LLAMA_SERVER_GPU_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-cuda}
+    ports:
+      - "${LLAMA_SERVER_PORT:-8080}:8080"
+    command:
+      - -m
+      - ${LLAMA_MODEL_PATH:-/models/vision/qwen3.6-27b/Qwen3.6-27B-Q4_K_M.gguf}
+      - --mmproj
+      - ${LLAMA_MMPROJ_PATH:-/models/vision/qwen3.6-27b/mmproj-F16.gguf}
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - -c
+      - "${LLAMA_CONTEXT_SIZE:-4096}"
+      - --n-gpu-layers
+      - "${LLAMA_GPU_LAYERS:-999}"
+    volumes:
+      - ./models/vision:/models/vision:ro
+    gpus: all
+    networks:
+      default:
+        aliases:
+          - llama_server
+
+  orchestrator:
+    environment:
+      OCR_SERVICE_URL: http://ocr_glm_gpu:8000
+      OCR_TIMEOUT_SECONDS: 600
+      OCR_ASYNC_ENABLED: "true"
+      OCR_JOB_HTTP_TIMEOUT_SECONDS: 30
+      OCR_JOB_POLL_INTERVAL_SECONDS: 5
+      OCR_JOB_STALL_TIMEOUT_SECONDS: 600
+      OCR_JOB_MAX_RUNTIME_SECONDS: 0
+    depends_on: !override
+      - layout_ppdoclayoutv3_cpu
+      - ocr_glm_gpu
+      - vision_llama
+
+  ocr_glm_gpu:
+    build:
+      context: .
+      dockerfile: services/ocr_glm/Dockerfile.gpu
+    ports:
+      - "8007:8000"
+    environment:
+      OCR_MODEL_DIR: /models/ocr/glm-ocr
+      OCR_MAX_NEW_TOKENS: 8192
+      OCR_JOB_HEARTBEAT_INTERVAL_SECONDS: 15
+      OCR_JOB_MAX_WORKERS: 1
+      OCR_REQUIRE_CUDA: "true"
+    volumes:
+      - ./jobs:/app/jobs
+      - ./models:/models:ro
+    gpus: all

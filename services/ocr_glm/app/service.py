@@ -74,6 +74,15 @@ def get_max_new_tokens() -> int:
     return parsed
 
 
+def require_cuda() -> bool:
+    return os.getenv("OCR_REQUIRE_CUDA", "false").lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
 def get_status() -> dict[str, str]:
     return {"status": "ok", "service": SERVICE_NAME}
 
@@ -102,6 +111,11 @@ def load_model() -> tuple[Any, Any, Any]:
     try:
         import torch
         from transformers import AutoModelForImageTextToText, AutoProcessor
+
+        if require_cuda() and not torch.cuda.is_available():
+            raise GlmOcrUnavailable(
+                "OCR_REQUIRE_CUDA is enabled, but PyTorch cannot access a CUDA GPU"
+            )
 
         _processor = AutoProcessor.from_pretrained(str(model_dir))
         _model = AutoModelForImageTextToText.from_pretrained(

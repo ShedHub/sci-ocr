@@ -633,9 +633,11 @@ detailed planning note lives in \texttt{docs/LAYOUT\_SCALING.md}.
 \item PP-DocLayoutV3 is wired as a CPU-only service and still needs broader
   quality validation on representative documents.
 \item GLM-OCR CPU inference is slow because crops are processed one at a time;
-  async OCR avoids one long HTTP request but does not speed up inference.
+  async OCR avoids one long HTTP request but does not speed up inference. A
+  CUDA PyTorch OCR worker is available through \texttt{docker-compose.gpu.yml}
+  for Nvidia hosts.
 \item \texttt{vision\_llama} depends on an external multimodal
-  \texttt{llama-server}; on CPU-class hardware it can be slow.
+  \texttt{llama-server}; CPU and Nvidia GPU Compose runtimes are available.
 \item Chart extraction from vision output is approximate.
 \item Assembly does not yet repair multi-column reading order, merge broken
   paragraphs, or associate captions with figures/charts beyond deterministic
@@ -654,6 +656,8 @@ detailed planning note lives in \texttt{docs/LAYOUT\_SCALING.md}.
 \item Validate CPU PP-DocLayoutV3 output quality on real and synthetic PDFs.
 \item Validate GLM-OCR output quality on text, table, and formula crops.
 \item Validate \texttt{vision\_llama} output on images, charts, and diagrams.
+\item Validate the GPU OCR and GPU \texttt{llama-server} stack on Ubuntu with
+  Nvidia hardware and record speed and quality measurements.
 \item Improve vision prompts and normalization for chart data and Mermaid.
 \item Add token-level OCR progress or partial output streaming if the runtime
   supports it cleanly.
@@ -662,7 +666,7 @@ detailed planning note lives in \texttt{docs/LAYOUT\_SCALING.md}.
 \subsection{Performance}
 
 \begin{itemize}[leftmargin=1.2cm]
-\item Improve OCR throughput with batching, crop parallelism, or GPU execution.
+\item Improve OCR throughput with batching and crop parallelism.
 \item Add future layout worker-pool support for high-core machines.
 \item Keep one-worker \texttt{LAYOUT\_SERVICE\_URL} mode for ordinary desktops.
 \item Consider \texttt{LAYOUT\_SERVICE\_URLS} for multi-worker page distribution.
@@ -695,8 +699,8 @@ pipeline:
 FastAPI orchestrator
   + stable shared contracts
   + PP-DocLayoutV3 CPU layout
-  + GLM-OCR CPU OCR
-  + optional llama-server vision
+  + GLM-OCR CPU/GPU OCR
+  + optional llama-server CPU/GPU vision
   + deterministic assembly
   + persistent artifacts for every stage
 \end{lstlisting}

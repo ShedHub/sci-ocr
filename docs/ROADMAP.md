@@ -37,6 +37,12 @@
 - Add a containerized CPU `llama_server_cpu` Compose runtime for `vision_llama`
 - Verify an end-to-end Docker CPU vision run on `science_mixed_content.pdf`
   with PP-DocLayoutV3, GLM-OCR, and containerized `llama-server`
+- Add `ocr_glm_gpu` with CUDA PyTorch wheels behind the same OCR contract
+- Add `docker-compose.gpu.yml` to switch the orchestrator to GPU OCR without
+  changing pipeline code
+- Add `llama_server_gpu` with the llama.cpp CUDA server image while keeping
+  `vision_llama` unchanged behind the same vision contract
+- Document Ubuntu + Nvidia runtime requirements and GPU startup commands
 
 ## Next
 
@@ -44,22 +50,22 @@
 - Validate GLM-OCR worker output quality on representative crops
 - Validate `vision_llama` output quality on representative image, chart, and
   diagram crops
+- Validate the GPU OCR and GPU llama-server stack on an Ubuntu host with an
+  Nvidia GPU and record performance/quality measurements
 - Add a quality validation harness that checks representative job artifacts for
   expected layout labels, OCR content, formulas, tables, vision output, and
   assembly order
 - Improve vision prompts and output normalization for chart data and Mermaid
   diagrams
-- Reduce CPU vision latency and prevent reasoning-style or truncated
+- Reduce vision latency and prevent reasoning-style or truncated
   `vision_llama` output on chart crops
-- Improve OCR throughput with batching, parallel crop processing, or GPU
-  execution
+- Improve OCR throughput with batching and parallel crop processing
 - Add token-level OCR generation progress or partial output streaming if the
   GLM-OCR/Transformers runtime supports it cleanly
 - Add a future layout worker-pool launcher/orchestrator path for high-core
   machines. See `docs/LAYOUT_SCALING.md`.
 - Replace or augment the temporary llama-server vision backend with specialized
   image, chart, and diagram processors when quality requirements are clearer
-- Add a GPU `llama-server` Compose runtime for machines with supported GPUs
 - Improve assembly for multi-column reading order, paragraph merging, and
   figure/chart caption association
 - Add a separate GPU PP-DocLayoutV3 container and orchestrator backend switch

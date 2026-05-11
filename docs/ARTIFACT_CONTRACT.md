@@ -198,10 +198,12 @@ The service may be implemented by:
 - `layout_ppdoclayoutv3_cpu` for the current CPU-only PP-DocLayoutV3 backend
 - another layout backend later
 
-GPU inference remains a future deployment target and should be introduced as a
-separate service/container. The orchestrator should switch between CPU and GPU
-layout backends by changing `LAYOUT_SERVICE_URL`, not by changing artifact
-contracts.
+GPU layout inference remains a future deployment target and should be
+introduced as a separate service/container. The orchestrator should switch
+between CPU and GPU layout backends by changing `LAYOUT_SERVICE_URL`, not by
+changing artifact contracts. This is the same deployment pattern already used
+for OCR, where `docker-compose.gpu.yml` switches `OCR_SERVICE_URL` from
+`ocr_glm` to `ocr_glm_gpu`.
 
 CPU PP-DocLayoutV3 already uses Paddle/MKLDNN internal threading. Current
 measurements and the future worker-pool sizing strategy are documented in
@@ -638,10 +640,12 @@ The OCR service returns recognized content in a service-shaped envelope.
 }
 ```
 
-Docker Compose currently uses `ocr_glm`, so normalized OCR artifacts from a real
-Compose run should report `source: "GLM-OCR"` and model backend `ocr_glm`. The
-`ocr_stub` backend still reports `source: "ocr_stub"` in fast unit and local
-contract tests.
+Docker Compose currently uses `ocr_glm` by default, while
+`docker-compose.gpu.yml` switches the orchestrator to `ocr_glm_gpu`. Both
+workers implement the same OCR contract and normalized OCR artifacts should
+report `source: "GLM-OCR"`. The model metadata backend distinguishes the
+runtime service. The `ocr_stub` backend still reports `source: "ocr_stub"` in
+fast unit and local contract tests.
 
 Formula responses are stored as raw LaTeX without outer Markdown display
 wrappers. For example, the OCR worker should return:
@@ -782,8 +786,11 @@ Example:
 Vision is an optional external worker service. It receives one cropped visual
 block and returns Markdown-ready content for article assembly.
 
-The current backend is `vision_llama`, an adapter around the containerized
-multimodal `llama_server_cpu` Compose service defined in `docker-compose.yml`.
+The current backend is `vision_llama`, an adapter around a containerized
+multimodal llama-server runtime. The default runtime is `llama_server_cpu` from
+`docker-compose.yml`; the Nvidia GPU runtime is `llama_server_gpu` from
+`docker-compose.gpu.yml`. Both expose the same Compose network alias
+`llama_server`, so the `vision_llama` contract and adapter code do not change.
 Later specialized image, chart, and diagram workers can replace or augment it
 behind the same contract.
 
